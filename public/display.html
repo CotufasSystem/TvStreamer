@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#09090b">
+  <title>TV Display App</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="display.css">
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <!-- Overlay de Vinculación por PIN -->
+  <div id="setup-overlay" class="overlay">
+    <div class="setup-box">
+      <h2>Vincular Pantalla</h2>
+      <div class="pin-card">
+        <span class="pin-label">CÓDIGO PIN DE ESTA TV:</span>
+        <div id="display-pin-code" class="pin-digits">------</div>
+        <p class="pin-instruction">Ingresa este código en la App del Teléfono para vincular esta TV.</p>
+      </div>
+      <div class="divider"><span>O VINCULACIÓN MANUAL RÁPIDA</span></div>
+      <div class="screen-selector-grid">
+        <button class="btn-screen" onclick="setManualScreenId(1)">TV 1</button>
+        <button class="btn-screen" onclick="setManualScreenId(2)">TV 2</button>
+        <button class="btn-screen" onclick="setManualScreenId(3)">TV 3</button>
+        <button class="btn-screen" onclick="setManualScreenId(4)">TV 4</button>
+        <button class="btn-screen" onclick="setManualScreenId(5)">TV 5</button>
+        <button class="btn-screen" onclick="setManualScreenId(6)">TV 6</button>
+        <button class="btn-screen" onclick="setManualScreenId(7)">TV 7</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tv-badge" class="tv-badge">TV <span id="badge-id">?</span> <span id="status-dot" class="dot offline"></span></div>
+
+  <!-- Viewport Multimedia -->
+  <div id="viewport" class="viewport">
+    <div id="screen-container" class="screen-container">
+      <img id="display-image" class="media-elem" src="" alt="" style="display: none;">
+      <video id="display-video" class="media-elem" autoplay loop muted playsinline webkit-playsinline preload="auto" style="display: none;"></video>
+      <iframe id="display-frame" class="media-elem" src="" frameborder="0" style="display: none;"></iframe>
+      <div id="display-text" class="text-elem" style="display: none;"></div>
+      
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">📺</div>
+        <div class="empty-title">Pantalla <span id="empty-id">#</span></div>
+        <div class="empty-subtitle">Esperando transmisión...</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="display.js"></script>
+</body>
+</html>
