@@ -9,7 +9,6 @@ const firebaseConfig = {
 };
 
 let db = null;
-let storage = null;
 
 function getDb() {
   if (db) return db;
@@ -22,23 +21,10 @@ function getDb() {
   }
   return null;
 }
-
-function getStorage() {
-  if (storage) return storage;
-  if (typeof firebase !== 'undefined') {
-    try {
-      if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(firebaseConfig);
-      storage = firebase.storage();
-      return storage;
-    } catch (e) {}
-  }
-  return null;
-}
-
 getDb();
 
-// Compresión automática de fotos para transmisión ultrarrápida
-function compressImage(file, maxDimension = 1280, quality = 0.75) {
+// Compresión rápida de imagen (< 50KB) para transmisión instantánea en Firestore
+function compressImage(file, maxDimension = 960, quality = 0.65) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -64,19 +50,15 @@ function compressImage(file, maxDimension = 1280, quality = 0.75) {
 
 // 1. ESCUCHAR PIN EN TV
 function listenTvPinPairing(pin, onPairedCallback) {
-  const fdb = getDb();
-  if (!fdb || !pin) return;
+  const fdb = getDb(); if (!fdb || !pin) return;
   const cleanPin = pin.toString().trim().replace(/\D/g, '');
   const pinDoc = fdb.collection('tv_pins').doc(cleanPin);
-
   pinDoc.set({ pin: cleanPin, paired: false, createdAt: Date.now() }).catch(() => {});
-
   const unsub = pinDoc.onSnapshot((snap) => {
     if (!snap.exists) return;
     const data = snap.data();
     if (data && data.assignedScreenId) {
-      unsub();
-      pinDoc.delete().catch(() => {});
+      unsub(); pinDoc.delete().catch(() => {});
       onPairedCallback(data.assignedScreenId);
     }
   }, () => {});
@@ -84,77 +66,51 @@ function listenTvPinPairing(pin, onPairedCallback) {
 
 // 2. VINCULAR PIN DESDE EL EMISOR
 async function pairTvWithPin(pin, targetScreenId, tvName) {
-  const fdb = getDb();
-  if (!fdb) throw new Error('Firestore no disponible');
-  const cleanPin = pin.toString().trim().replace(/\D/g, '');
-  const screenNum = parseInt(targetScreenId, 10);
-
+  const fdb = getDb(); if (!fdb) throw new Error('Firestore no disponible');
+  const cleanPin = pin.toString().trim().replace(/\D/g, ''), screenNum = parseInt(targetScreenId, 10);
   await fdb.collection('tv_pins').doc(cleanPin).set({
     pin: cleanPin, assignedScreenId: screenNum, tvName: tvName || `TV ${screenNum}`, paired: true, pairedAt: Date.now()
   }, { merge: true });
-
   await fdb.collection('tv_streamer').doc('displays').set({
     [screenNum]: { screenId: screenNum, tvName: tvName || `TV ${screenNum}`, online: true, lastSeen: Date.now() }
   }, { merge: true });
-
   return true;
 }
 
 // 3. DESVINCULAR
 function unpairTv(screenId) {
-  const fdb = getDb();
-  if (!fdb || !screenId) return;
+  const fdb = getDb(); if (!fdb || !screenId) return;
   fdb.collection('tv_streamer').doc('displays').update({ [`${screenId}.online`]: false }).catch(() => {});
   fdb.collection('tv_unpair').doc(screenId.toString()).set({ timestamp: Date.now() }).catch(() => {});
 }
 
 function listenUnpairSignal(screenId, callback) {
-  const fdb = getDb();
-  if (!fdb || !screenId) return;
+  const fdb = getDb(); if (!fdb || !screenId) return;
   fdb.collection('tv_unpair').doc(screenId.toString()).onSnapshot((doc) => { if (doc.exists) callback(); }, () => {});
 }
 
 // 4. ESTADO MULTIMEDIA
 function listenFirebaseState(callback) {
-  const fdb = getDb();
-  if (!fdb) return;
+  const fdb = getDb(); if (!fdb) return;
   fdb.collection('tv_streamer').doc('state').onSnapshot((doc) => {
     if (doc.exists) callback(doc.data());
   }, (err) => console.error('Error state:', err));
 }
 
 function updateFirebaseState(newState) {
-  const fdb = getDb();
-  if (!fdb) return;
+  const fdb = getDb(); if (!fdb) return;
   fdb.collection('tv_streamer').doc('state').set(newState, { merge: true }).catch((e) => {
     console.error('Error actualizando estado:', e);
   });
 }
 
-// 5. PROCESAMIENTO MULTIMEDIA
+// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS
 async function uploadMediaFile(file) {
   const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
-  const fstorage = getStorage();
-
-  // Si Firebase Storage está activado, intentar subirlo allí
-  if (fstorage) {
-    try {
-      const filename = `media_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '')}`;
-      const snap = await fstorage.ref().child(`uploads/${filename}`).put(file);
-      const url = await snap.ref.getDownloadURL();
-      return { url, type: isVideo ? 'video' : 'image' };
-    } catch (err) {
-      console.warn('Storage upload fallback:', err);
-    }
-  }
-
-  // Si es imagen, comprimirla para Firestore
   if (!isVideo) {
-    const compressedData = await compressImage(file, 1280, 0.75);
-    return { url: compressedData, type: 'image' };
+    const compressedUrl = await compressImage(file, 960, 0.65);
+    return { url: compressedUrl, type: 'image' };
   }
-
-  // Si es video sin Storage, leer como data
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve({ url: r.result, type: 'video' });
@@ -164,16 +120,14 @@ async function uploadMediaFile(file) {
 }
 
 function reportFirebaseSpecs(screenId, specs) {
-  const fdb = getDb();
-  if (!fdb || !screenId) return;
+  const fdb = getDb(); if (!fdb || !screenId) return;
   fdb.collection('tv_streamer').doc('displays').set({
     [screenId]: { screenId: parseInt(screenId, 10), specs, online: true, lastSeen: Date.now() }
   }, { merge: true }).catch(() => {});
 }
 
 function listenFirebaseDisplays(callback) {
-  const fdb = getDb();
-  if (!fdb) return;
+  const fdb = getDb(); if (!fdb) return;
   fdb.collection('tv_streamer').doc('displays').onSnapshot((doc) => {
     if (doc.exists) callback(Object.values(doc.data() || {}));
   }, () => {});

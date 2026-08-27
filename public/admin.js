@@ -30,12 +30,9 @@ function renderUI() {
   renderDisplaysStatus();
 }
 
-function switchMode(mode) {
-  currentState.mode = mode; renderUI();
-  if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-}
-
+function switchMode(mode) { currentState.mode = mode; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 function renderDisplaysStatus() {
+
   const container = document.getElementById('displays-status-container'); if (!container) return;
   const displayMap = new Map(); currentDisplays.forEach(d => { if (d && d.screenId) displayMap.set(d.screenId, d); });
   container.innerHTML = '';
@@ -255,6 +252,8 @@ async function uploadScreenMedia(screenId, input) {
     renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
   }
 }
+
+
 function promptScreenUrl(screenId) {
   const u = prompt('URL:');
   if (u) { currentState.screens[screenId] = { type: 'url', src: u.trim(), fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
