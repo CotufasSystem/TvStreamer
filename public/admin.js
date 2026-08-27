@@ -40,8 +40,6 @@ function handleUnpairTv(screenId, e) {
   }
 }
 
-
-
 function getMediaPreviewHtml(src, type) {
   if (!src) return '<span class="no-img-text">Sin contenido</span>';
   if (src.startsWith('tvvideo://') || src.startsWith('chunked://')) return '<div style="color:#38bdf8; font-weight:bold; padding:10px;">🎬 Video Cargado</div>';
@@ -104,7 +102,7 @@ function renderIndividualView() {
       <div class="screen-preview-box">${previewHtml}</div>
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
         <input type="file" id="file-screen-${id}" accept="image/*,video/*" style="display:none" onchange="uploadScreenMedia(${id}, this)">
-        <button class="btn btn-outline" style="flex:1" onclick="document.getElementById('file-screen-${id}').click()">🎬 Archivo</button>
+        <button id="btn-file-${id}" class="btn btn-outline" style="flex:1" onclick="document.getElementById('file-screen-${id}').click()">🎬 Archivo</button>
         <button class="btn btn-outline" onclick="openSlideshowModal(${id})">🎠 Playlist [+]</button>
         <button class="btn btn-outline" onclick="promptScreenUrl(${id})">🌐 URL</button>
         <button class="btn btn-outline" onclick="promptScreenText(${id})">📢 Texto</button>
@@ -114,9 +112,8 @@ function renderIndividualView() {
   }
 }
 
-
-async function uploadMedia(file, targetKey = 'screen_1') {
-  if (typeof uploadMediaFile === 'function') return await uploadMediaFile(file, targetKey);
+async function uploadMedia(file, targetKey = 'screen_1', onProgress = () => {}) {
+  if (typeof uploadMediaFile === 'function') return await uploadMediaFile(file, targetKey, onProgress);
   const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name || '');
   const r = new FileReader();
   return new Promise((res) => { r.onload = () => res({ url: r.result, type: isVideo ? 'video' : 'image' }); r.readAsDataURL(file); });
@@ -181,7 +178,6 @@ function sendMirrorSlideshow() {
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
 
-
 function setMirrorTab(type) {
   document.querySelectorAll('#view-mirror .subtab-btn').forEach(b => b.classList.remove('active'));
   if (event && event.target) event.target.classList.add('active');
@@ -193,12 +189,16 @@ function setMirrorTab(type) {
 }
 async function handleMirrorFileUpload(input) {
   if (input.files.length > 0) {
-    const { url, type } = await uploadMedia(input.files[0], 'mirror');
-    currentState.mirrorConfig = { type, src: url, fit: 'contain' };
-    renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    const btn = document.getElementById('btn-mirror-file');
+    if (btn) btn.textContent = '⏳ Subiendo...';
+    try {
+      const { url, type } = await uploadMedia(input.files[0], 'mirror', (p) => { if (btn) btn.textContent = `⏳ ${p}%...`; });
+      currentState.mirrorConfig = { type, src: url, fit: 'contain' };
+      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    } catch (e) { alert('Error subiendo: ' + e.message); }
+    finally { if (btn) btn.textContent = 'Subir Archivo'; input.value = ''; }
   }
 }
-
 function sendMirrorUrl() {
   const inEl = document.getElementById('mirror-url-input'); const s = inEl ? inEl.value.trim() : '';
   if (s) { currentState.mirrorConfig = { type: 'url', src: s, fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
@@ -216,6 +216,7 @@ async function handleSplitFileUpload(input) {
     const { url, type } = await uploadMedia(input.files[0], 'split');
     currentState.splitConfig.type = type; currentState.splitConfig.src = url;
     renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    input.value = '';
   }
 }
 function clearSplitMedia() {
@@ -237,12 +238,21 @@ function updateSplitConfig() {
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
 
-
 async function uploadScreenMedia(screenId, input) {
   if (input.files.length > 0) {
-    const { url, type } = await uploadMedia(input.files[0], `screen_${screenId}`);
-    currentState.screens[screenId] = { type, src: url, fit: 'contain' };
-    renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    const btn = document.getElementById(`btn-file-${screenId}`);
+    if (btn) { btn.textContent = '⏳ 0%...'; btn.disabled = true; }
+    try {
+      const { url, type } = await uploadMedia(input.files[0], `screen_${screenId}`, (percent) => {
+        if (btn) btn.textContent = `⏳ ${percent}%...`;
+      });
+      currentState.screens[screenId] = { type, src: url, fit: 'contain' };
+      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    } catch (err) { alert('Error al subir: ' + err.message); }
+    finally {
+      if (btn) { btn.textContent = '🎬 Archivo'; btn.disabled = false; }
+      input.value = '';
+    }
   }
 }
 function promptScreenUrl(screenId) {
@@ -256,7 +266,6 @@ function promptScreenText(screenId) {
 function changeScreenFit(screenId, fit) {
   if (currentState.screens[screenId]) { currentState.screens[screenId].fit = fit; if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
-
 function clearScreenMedia(screenId) {
   if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore(`screen_${screenId}`);
   if (currentState.screens[screenId]) { currentState.screens[screenId] = { type: 'empty', src: null, text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
@@ -266,7 +275,6 @@ function clearAllScreens() {
   if (typeof deleteVideoFromFirestore === 'function') { deleteVideoFromFirestore('mirror'); deleteVideoFromFirestore('split'); }
   currentState = JSON.parse(JSON.stringify(defaultState)); renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
-
 
 function openPairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'flex'; }
 function closePairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'none'; }
@@ -288,4 +296,3 @@ async function submitPairPin() {
 if (typeof listenFirebaseDisplays === 'function') listenFirebaseDisplays((d) => { if (d && d.length) { currentDisplays = d; renderDisplaysStatus(); } });
 if (typeof listenFirebaseState === 'function') listenFirebaseState((s) => { if (s) { currentState = Object.assign(currentState, s); renderUI(); } });
 renderUI();
-

@@ -110,7 +110,7 @@ function updateFirebaseState(newState) {
   } catch (err) { console.error('Error serializando:', err); }
 }
 
-// 5. NUEVA COLECCIÓN FIRESTONE 'tv_videos' PARA CARGAR Y BORRAR AUTOMÁTICAMENTE
+// 5. SUBIDA Y CARGA DE VIDEOS EN COLECCIÓN 'tv_videos'
 function blobToBase64(blob) {
   return new Promise((resolve) => {
     const r = new FileReader();
@@ -119,24 +119,18 @@ function blobToBase64(blob) {
   });
 }
 
-async function uploadVideoToFirestore(file, targetKey = 'screen_1') {
+async function uploadVideoToFirestore(file, targetKey = 'screen_1', onProgress = () => {}) {
   const fdb = getDb();
   if (!fdb) throw new Error('Firestore no conectado');
   const CHUNK_SIZE = 800 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const videoId = `vid_${Date.now()}`;
 
-  // Guardar documento principal del video en la colección tv_videos
   await fdb.collection('tv_videos').doc(targetKey).set({
-    videoId,
-    totalChunks,
-    mimeType: file.type || 'video/mp4',
-    size: file.size,
-    name: file.name,
-    createdAt: Date.now()
+    videoId, totalChunks, mimeType: file.type || 'video/mp4', size: file.size, name: file.name, createdAt: Date.now()
   });
 
-  // Subir fragmentos en paralelo en la subcolección chunks
+  let completed = 0;
   const uploadPromises = [];
   for (let i = 0; i < totalChunks; i++) {
     const slice = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
@@ -145,6 +139,8 @@ async function uploadVideoToFirestore(file, targetKey = 'screen_1') {
       await fdb.collection('tv_videos').doc(targetKey).collection('chunks').doc(`part_${idx}`).set({
         data: b64, index: idx
       });
+      completed++;
+      onProgress(Math.round((completed / totalChunks) * 100));
     })(i, slice));
   }
 
@@ -152,7 +148,6 @@ async function uploadVideoToFirestore(file, targetKey = 'screen_1') {
   return `tvvideo://${targetKey}?id=${videoId}`;
 }
 
-// Descargar y ensamblar video desde la colección tv_videos
 async function loadVideoFromFirestore(videoUri) {
   const fdb = getDb();
   if (!fdb || !videoUri || !videoUri.startsWith('tvvideo://')) return videoUri;
@@ -179,7 +174,6 @@ async function loadVideoFromFirestore(videoUri) {
   return URL.createObjectURL(blob);
 }
 
-// Eliminar video de la colección tv_videos al quitarlo
 async function deleteVideoFromFirestore(targetKey) {
   const fdb = getDb();
   if (!fdb || !targetKey) return;
@@ -194,18 +188,17 @@ async function deleteVideoFromFirestore(targetKey) {
       }
       await Promise.all(delPromises);
       await fdb.collection('tv_videos').doc(key).delete();
-      console.log(`🗑 [FIRESTORE] Video ${key} eliminado de la base de datos.`);
     }
-  } catch (e) { console.warn('Error borrando video:', e); }
+  } catch (e) {}
 }
 
-async function uploadMediaFile(file, targetKey = 'screen_1') {
+async function uploadMediaFile(file, targetKey = 'screen_1', onProgress = () => {}) {
   const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
   if (!isVideo) {
     const compressedUrl = await compressImage(file, 960, 0.65);
     return { url: compressedUrl, type: 'image' };
   }
-  const videoUri = await uploadVideoToFirestore(file, targetKey);
+  const videoUri = await uploadVideoToFirestore(file, targetKey, onProgress);
   return { url: videoUri, type: 'video' };
 }
 
