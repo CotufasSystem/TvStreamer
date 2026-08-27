@@ -31,8 +31,8 @@ function renderUI() {
 }
 
 function switchMode(mode) { currentState.mode = mode; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
-function renderDisplaysStatus() {
 
+function renderDisplaysStatus() {
   const container = document.getElementById('displays-status-container'); if (!container) return;
   const displayMap = new Map(); currentDisplays.forEach(d => { if (d && d.screenId) displayMap.set(d.screenId, d); });
   container.innerHTML = '';
@@ -54,16 +54,23 @@ function handleUnpairTv(screenId, e) {
   }
 }
 
+function getMediaPreviewHtml(src, type) {
+  if (!src) return '<span class="no-img-text">Sin contenido</span>';
+  if (src.startsWith('chunked://')) return '<div style="color:#38bdf8; font-weight:bold; padding:10px;">🎬 Video Cargado</div>';
+  if (type === 'video' || src.startsWith('data:video')) return `<video src="${src}" muted autoplay loop></video>`;
+  return `<img src="${src}">`;
+}
+
+
 function renderMirrorView() {
   const conf = currentState.mirrorConfig || {}, box = document.getElementById('mirror-preview-box'), content = document.getElementById('mirror-preview-content');
   if (!box || !content) return;
   if (conf.type && conf.type !== 'empty' && (conf.src || conf.text || (conf.items && conf.items.length))) {
     box.style.display = 'flex';
-    if (conf.type === 'image') content.innerHTML = `<img src="${conf.src}">`;
-    else if (conf.type === 'slideshow') content.innerHTML = `🎠 Playlist (${(conf.items || []).length} items, ${conf.interval || 5}s)`;
-    else if (conf.type === 'video') content.innerHTML = `<video src="${conf.src}" muted autoplay loop></video>`;
+    if (conf.type === 'slideshow') content.innerHTML = `🎠 Playlist (${(conf.items || []).length} items, ${conf.interval || 5}s)`;
     else if (conf.type === 'url') content.innerHTML = `🌐 ${conf.src}`;
     else if (conf.type === 'text') content.innerHTML = `📢 ${conf.text}`;
+    else content.innerHTML = getMediaPreviewHtml(conf.src, conf.type);
   } else box.style.display = 'none';
 }
 
@@ -81,10 +88,9 @@ function renderSplitView() {
   if (!box || !content) return;
   if (conf.type && conf.type !== 'empty' && (conf.src || conf.text)) {
     box.style.display = 'flex';
-    if (conf.type === 'image') content.innerHTML = `<img src="${conf.src}">`;
-    else if (conf.type === 'video') content.innerHTML = `<video src="${conf.src}" muted autoplay loop></video>`;
-    else if (conf.type === 'url') content.innerHTML = `🌐 ${conf.src}`;
+    if (conf.type === 'url') content.innerHTML = `🌐 ${conf.src}`;
     else if (conf.type === 'text') content.innerHTML = `📢 ${conf.text}`;
+    else content.innerHTML = getMediaPreviewHtml(conf.src, conf.type);
   } else box.style.display = 'none';
 }
 
@@ -95,11 +101,10 @@ function renderIndividualView() {
     const data = (currentState.screens && currentState.screens[id]) ? currentState.screens[id] : { type: 'empty', fit: 'contain' };
     const card = document.createElement('div'); card.className = 'screen-card';
     let previewHtml = `<span class="no-img-text">Sin contenido</span>`;
-    if (data.type === 'image') previewHtml = `<img src="${data.src}">`;
-    else if (data.type === 'slideshow') previewHtml = `<span style="font-weight:bold;color:#38bdf8;padding:8px;">🎠 Playlist (${(data.items || []).length} items / ${data.interval || 5}s)</span>`;
-    else if (data.type === 'video') previewHtml = `<video src="${data.src}" muted autoplay loop></video>`;
+    if (data.type === 'slideshow') previewHtml = `<span style="font-weight:bold;color:#38bdf8;padding:8px;">🎠 Playlist (${(data.items || []).length} items / ${data.interval || 5}s)</span>`;
     else if (data.type === 'url') previewHtml = `<span class="no-img-text">🌐 ${data.src}</span>`;
     else if (data.type === 'text') previewHtml = `<span style="font-weight:bold;color:#fbbf24;padding:8px;">${data.text}</span>`;
+    else if (data.type && data.type !== 'empty') previewHtml = getMediaPreviewHtml(data.src, data.type);
 
     card.innerHTML = `
       <div class="screen-card-header"><span class="screen-title">Pantalla ${id}</span>
@@ -136,9 +141,10 @@ function renderThumbnailGrid(containerId, countId, playlist, removeFnName) {
   if (playlist.length === 0) { container.innerHTML = `<div class="empty-playlist-msg">Lista vacía. Usa [+] para agregar.</div>`; return; }
   container.innerHTML = '';
   playlist.forEach((url, idx) => {
-    const isVid = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && url.startsWith('data:video'));
+    const isVid = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && (url.startsWith('data:video') || url.startsWith('chunked://')));
     const card = document.createElement('div'); card.className = 'thumb-card';
-    card.innerHTML = `${isVid ? `<video src="${url}" muted></video>` : `<img src="${url}">`}<span class="thumb-type-tag">${isVid ? '🎬 Video' : '🖼 Foto'}</span><button class="thumb-remove-btn" onclick="${removeFnName}(${idx})">✕</button>`;
+    let thumbInner = isVid ? (url.startsWith('chunked://') ? '<span style="font-size:24px;">🎬</span>' : `<video src="${url}" muted></video>`) : `<img src="${url}">`;
+    card.innerHTML = `${thumbInner}<span class="thumb-type-tag">${isVid ? '🎬 Video' : '🖼 Foto'}</span><button class="thumb-remove-btn" onclick="${removeFnName}(${idx})">✕</button>`;
     container.appendChild(card);
   });
 }
@@ -219,6 +225,7 @@ function sendMirrorText() {
 function clearMirrorMedia() {
   currentState.mirrorConfig = { type: 'empty', src: null, items: [], text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
+
 async function handleSplitFileUpload(input) {
   if (input.files.length > 0) {
     const { url, type } = await uploadMedia(input.files[0]);
@@ -238,7 +245,6 @@ function applySplitPreset() {
   currentState.splitConfig.rows = rows; currentState.splitConfig.cols = cols; currentState.splitConfig.layout = layout;
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
-
 function updateSplitConfig() {
   const fitEl = document.getElementById('split-fit');
   currentState.splitConfig.fit = fitEl ? fitEl.value : 'cover';
@@ -252,8 +258,6 @@ async function uploadScreenMedia(screenId, input) {
     renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
   }
 }
-
-
 function promptScreenUrl(screenId) {
   const u = prompt('URL:');
   if (u) { currentState.screens[screenId] = { type: 'url', src: u.trim(), fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
@@ -268,18 +272,14 @@ function changeScreenFit(screenId, fit) {
 function clearScreenMedia(screenId) {
   if (currentState.screens[screenId]) { currentState.screens[screenId] = { type: 'empty', src: null, text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
-function clearAllScreens() {
-  currentState = JSON.parse(JSON.stringify(defaultState));
-  renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-}
+function clearAllScreens() { currentState = JSON.parse(JSON.stringify(defaultState)); renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
+
+
 function openPairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'flex'; }
 function closePairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'none'; }
 async function submitPairPin() {
-  const pinInput = document.getElementById('pin-input');
-  const cleanPin = (pinInput ? pinInput.value : '').replace(/\D/g, '');
-  const selectEl = document.getElementById('pair-target-select');
-  const targetScreenId = selectEl ? selectEl.value : '1';
-  const btn = document.getElementById('btn-submit-pair');
+  const pinInput = document.getElementById('pin-input'), selectEl = document.getElementById('pair-target-select'), btn = document.getElementById('btn-submit-pair');
+  const cleanPin = (pinInput ? pinInput.value : '').replace(/\D/g, ''), targetScreenId = selectEl ? selectEl.value : '1';
   if (!cleanPin || cleanPin.length !== 6) return alert('Ingresa los 6 dígitos del PIN.');
   if (btn) { btn.textContent = '⏳ Vinculando...'; btn.disabled = true; }
   try {
@@ -291,6 +291,8 @@ async function submitPairPin() {
   } catch (err) { alert('Error: ' + (err.message || 'Fallo')); }
   finally { if (btn) { btn.textContent = 'Vincular Ahora'; btn.disabled = false; } }
 }
+
+
 if (typeof listenFirebaseDisplays === 'function') listenFirebaseDisplays((d) => { if (d && d.length) { currentDisplays = d; renderDisplaysStatus(); } });
 if (typeof listenFirebaseState === 'function') listenFirebaseState((s) => { if (s) { currentState = Object.assign(currentState, s); renderUI(); } });
 renderUI();
