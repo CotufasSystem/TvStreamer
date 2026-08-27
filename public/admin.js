@@ -115,10 +115,12 @@ function renderIndividualView() {
 function readFileAsBase64(f) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); }); }
 function checkIsVideo(f) { return (f.type && f.type.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(f.name || ''); }
 async function uploadMedia(file) {
-  if (typeof uploadToFirebaseStorage === 'function') { try { return await uploadToFirebaseStorage(file); } catch (e) {} }
-  const isVideo = checkIsVideo(file), base64Data = await readFileAsBase64(file);
-  return { url: base64Data, type: isVideo ? 'video' : 'image' };
+  if (typeof uploadMediaFile === 'function') return await uploadMediaFile(file);
+  const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name || '');
+  const r = new FileReader();
+  return new Promise((res) => { r.onload = () => res({ url: r.result, type: isVideo ? 'video' : 'image' }); r.readAsDataURL(file); });
 }
+
 
 function renderThumbnailGrid(containerId, countId, playlist, removeFnName) {
   const container = document.getElementById(containerId), countEl = document.getElementById(countId);
