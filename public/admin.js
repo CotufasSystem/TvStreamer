@@ -23,23 +23,12 @@ const tabMirror = document.getElementById('tab-mirror'), tabSplit = document.get
 const viewMirror = document.getElementById('view-mirror'), viewSplit = document.getElementById('view-split'), viewIndividual = document.getElementById('view-individual');
 const individualContainer = document.getElementById('individual-screens-container');
 
-socket.on('state-update', (state) => {
-  currentState = state;
-  renderUI();
-  if (typeof updateFirebaseState === 'function') updateFirebaseState(state);
-});
+socket.on('state-update', (state) => { currentState = state; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(state); });
 socket.on('displays-update', (displays) => { currentDisplays = displays; renderDisplaysStatus(); });
 
 if (typeof listenFirebaseDisplays === 'function') {
-  listenFirebaseDisplays((displays) => {
-    if (displays && displays.length) {
-      currentDisplays = displays;
-      renderDisplaysStatus();
-    }
-  });
+  listenFirebaseDisplays((displays) => { if (displays && displays.length) { currentDisplays = displays; renderDisplaysStatus(); } });
 }
-
-
 
 function renderUI() {
   if (!currentState) return;
@@ -57,13 +46,31 @@ function renderDisplaysStatus() {
   const displayMap = new Map();
   currentDisplays.forEach(d => { if (d.screenId) displayMap.set(d.screenId, d); });
   statusContainer.innerHTML = '';
+
   for (let id = 1; id <= 7; id++) {
-    const disp = displayMap.get(id), isOnline = !!disp, specs = disp && disp.specs ? disp.specs : null;
+    const disp = displayMap.get(id), isOnline = disp ? (disp.online !== undefined ? disp.online : true) : false, specs = disp && disp.specs ? disp.specs : null;
     const chip = document.createElement('a');
     chip.className = 'status-chip'; chip.href = `/display.html?id=${id}`; chip.target = '_blank';
-    let specHtml = isOnline ? (specs ? `${specs.resLabel} (${specs.aspect})` : 'Conectada') : 'Desconectada';
-    chip.innerHTML = `<div class="status-chip-header"><span>📺 TV ${id}</span><span class="chip-status-dot ${isOnline ? 'online' : ''}"></span></div><span class="spec-tag">${specHtml}</span>`;
+    let specHtml = isOnline ? (specs ? `${specs.resLabel} (${specs.aspect})` : 'Conectada 🟢') : 'Sin vincular ⚪';
+    chip.innerHTML = `
+      <div class="status-chip-header">
+        <span>📺 TV ${id}</span>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="chip-status-dot ${isOnline ? 'online' : ''}"></span>
+          ${isOnline ? `<button class="thumb-remove-btn" style="position:static; width:16px; height:16px;" onclick="handleUnpairTv(${id}, event)" title="Desvincular TV">✕</button>` : ''}
+        </div>
+      </div>
+      <span class="spec-tag">${specHtml}</span>
+    `;
     statusContainer.appendChild(chip);
+  }
+}
+
+function handleUnpairTv(screenId, e) {
+  e.preventDefault(); e.stopPropagation();
+  if (confirm(`¿Desvincular TV ${screenId}? La pantalla volverá a mostrar un código nuevo.`)) {
+    if (typeof unpairTv === 'function') unpairTv(screenId);
+    socket.emit('clear-screens', screenId);
   }
 }
 
@@ -143,6 +150,9 @@ function readFileAsBase64(file) {
 }
 function checkIsVideo(file) { return (file.type && file.type.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name || ''); }
 async function uploadMedia(file) {
+  if (typeof uploadToFirebaseStorage === 'function') {
+    try { return await uploadToFirebaseStorage(file); } catch (e) {}
+  }
   const isVideo = checkIsVideo(file), base64Data = await readFileAsBase64(file);
   const res = await fetch('/api/upload-base64', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -249,11 +259,24 @@ function clearScreenMedia(screenId) { socket.emit('clear-screens', screenId); }
 
 function openPairModal() { document.getElementById('pair-modal').style.display = 'flex'; }
 function closePairModal() { document.getElementById('pair-modal').style.display = 'none'; }
-function submitPairPin() {
+async function submitPairPin() {
   const pin = document.getElementById('pin-input').value.trim(), targetScreenId = document.getElementById('pair-target-select').value;
   if (!pin || pin.length < 6) return alert('PIN de 6 dígitos requerido');
+
+  if (typeof pairTvWithPin === 'function') {
+    try {
+      await pairTvWithPin(pin, targetScreenId, `TV ${targetScreenId}`);
+      alert(`¡TV ${targetScreenId} vinculada con éxito vía Firebase!`);
+      closePairModal();
+      document.getElementById('pin-input').value = '';
+      return;
+    } catch (e) {
+      console.warn('Firebase pair fallback to socket:', e);
+    }
+  }
+
   socket.emit('pair-pin', { pin, targetScreenId }, (res) => {
-    if (res.success) { alert(`¡Vinculada a TV ${res.screenId}!`); closePairModal(); }
+    if (res.success) { alert(`¡Vinculada a TV ${res.screenId}!`); closePairModal(); document.getElementById('pin-input').value = ''; }
     else alert(res.message || 'Error al vincular');
   });
 }

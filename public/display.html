@@ -15,29 +15,31 @@
   <script src="firebase-sync.js"></script>
 </head>
 <body>
-  <!-- Overlay de Vinculación por PIN -->
+  <!-- Pantalla de Vinculación Principal para Android TV -->
   <div id="setup-overlay" class="overlay">
     <div class="setup-box">
-      <h2>Vincular Pantalla</h2>
+      <div class="tv-app-logo">📺 TV Streamer</div>
+      <h2>Vincular esta Pantalla</h2>
+      <p class="pin-instruction">En la App de tu celular o panel de control, toca <strong>[➕ Agregar TV]</strong> e ingresa este código:</p>
+      
       <div class="pin-card">
-        <span class="pin-label">CÓDIGO PIN DE ESTA TV:</span>
-        <div id="display-pin-code" class="pin-digits">------</div>
-        <p class="pin-instruction">Ingresa este código en la App del Teléfono para vincular esta TV.</p>
+        <span class="pin-label">CÓDIGO DE VINCULACIÓN:</span>
+        <div id="display-pin-code" class="pin-digits">--- ---</div>
+        <div class="pin-status-row"><span class="dot online"></span> Esperando señal del emisor...</div>
       </div>
-      <div class="divider"><span>O VINCULACIÓN MANUAL RÁPIDA</span></div>
-      <div class="screen-selector-grid">
-        <button class="btn-screen" onclick="setManualScreenId(1)">TV 1</button>
-        <button class="btn-screen" onclick="setManualScreenId(2)">TV 2</button>
-        <button class="btn-screen" onclick="setManualScreenId(3)">TV 3</button>
-        <button class="btn-screen" onclick="setManualScreenId(4)">TV 4</button>
-        <button class="btn-screen" onclick="setManualScreenId(5)">TV 5</button>
-        <button class="btn-screen" onclick="setManualScreenId(6)">TV 6</button>
-        <button class="btn-screen" onclick="setManualScreenId(7)">TV 7</button>
+
+      <div class="setup-footer">
+        <span>URL Panel Emisor: <code>https://tvstreamer-57955.web.app</code></span>
       </div>
     </div>
   </div>
 
-  <div id="tv-badge" class="tv-badge">TV <span id="badge-id">?</span> <span id="status-dot" class="dot offline"></span></div>
+  <!-- Badge flotante de TV vinculada -->
+  <div id="tv-badge" class="tv-badge">
+    <span>TV <span id="badge-id">?</span></span>
+    <span id="status-dot" class="dot offline"></span>
+    <button class="btn-unpair" onclick="unpairThisTv()" title="Desvincular">✕</button>
+  </div>
 
   <!-- Viewport Multimedia -->
   <div id="viewport" class="viewport">
@@ -49,8 +51,8 @@
       
       <div id="empty-state" class="empty-state">
         <div class="empty-icon">📺</div>
-        <div class="empty-title">Pantalla <span id="empty-id">#</span></div>
-        <div class="empty-subtitle">Esperando transmisión...</div>
+        <div class="empty-title">Pantalla <span id="empty-id">#</span> Vinculada</div>
+        <div class="empty-subtitle">Esperando emisión desde el panel de control...</div>
       </div>
     </div>
   </div>

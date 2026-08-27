@@ -33,47 +33,93 @@ function getDisplaySpecs() {
 
 function initDisplay() {
   const p = new URLSearchParams(window.location.search);
-  const urlId = p.get('id') || localStorage.getItem('tv_screen_id');
-  if (urlId && parseInt(urlId, 10) >= 1 && parseInt(urlId, 10) <= 7) {
+  const urlId = p.get('id');
+  const storedId = localStorage.getItem('tv_screen_id');
+
+  if (urlId) {
     screenId = parseInt(urlId, 10);
     localStorage.setItem('tv_screen_id', screenId);
+  } else if (storedId) {
+    screenId = parseInt(storedId, 10);
+  }
+
+  if (screenId && screenId >= 1 && screenId <= 7) {
     setupOverlay.style.display = 'none';
     badgeIdEl.textContent = screenId;
     emptyIdEl.textContent = screenId;
-    registerDisplay(false);
+    registerDisplay();
+    if (typeof listenUnpairSignal === 'function') {
+      listenUnpairSignal(screenId, () => unpairThisTv());
+    }
   } else {
-    setupOverlay.style.display = 'flex';
-    registerDisplay(true);
+    showPairingScreen();
   }
 }
 
-function registerDisplay(requestPin) {
+function showPairingScreen() {
+  setupOverlay.style.display = 'flex';
+  // Generar código PIN de 6 dígitos único para esta TV
+  currentPin = Math.floor(100000 + Math.random() * 900000).toString();
+  pinDisplayEl.textContent = `${currentPin.slice(0, 3)} - ${currentPin.slice(3)}`;
+
+  // Escuchar vinculación en Firebase RTDB y WebSockets
+  if (typeof listenTvPinPairing === 'function') {
+    listenTvPinPairing(currentPin, (assignedId) => {
+      onTvPaired(assignedId);
+    });
+  }
+  socket.emit('register-display', { screenId: null, requestPin: true, specs: getDisplaySpecs() });
+}
+
+function onTvPaired(assignedId) {
+  screenId = parseInt(assignedId, 10);
+  localStorage.setItem('tv_screen_id', screenId);
+  badgeIdEl.textContent = screenId;
+  emptyIdEl.textContent = screenId;
+  setupOverlay.style.display = 'none';
+  registerDisplay();
+  if (typeof listenUnpairSignal === 'function') {
+    listenUnpairSignal(screenId, () => unpairThisTv());
+  }
+}
+
+function unpairThisTv() {
+  localStorage.removeItem('tv_screen_id');
+  screenId = null;
+  hideAllMedia();
+  showPairingScreen();
+}
+
+function registerDisplay() {
   const specs = getDisplaySpecs();
-  socket.emit('register-display', { screenId, requestPin, specs });
-  if (typeof reportFirebaseSpecs === 'function' && screenId) reportFirebaseSpecs(screenId, specs);
+  socket.emit('register-display', { screenId, specs });
+  if (typeof reportFirebaseSpecs === 'function' && screenId) {
+    reportFirebaseSpecs(screenId, specs);
+  }
 }
 
-function setManualScreenId(id) {
-  screenId = id; localStorage.setItem('tv_screen_id', id);
-  badgeIdEl.textContent = id; emptyIdEl.textContent = id;
-  setupOverlay.style.display = 'none'; registerDisplay(false);
-}
-
-socket.on('assigned-pin', (pin) => { currentPin = pin; pinDisplayEl.textContent = `${pin.slice(0, 3)} - ${pin.slice(3)}`; });
-socket.on('paired-success', (id) => setManualScreenId(id));
-socket.on('connect', () => { statusDot.className = 'dot online'; registerDisplay(!screenId); });
+socket.on('assigned-pin', (pin) => {
+  if (!screenId) {
+    currentPin = pin;
+    pinDisplayEl.textContent = `${pin.slice(0, 3)} - ${pin.slice(3)}`;
+  }
+});
+socket.on('paired-success', (id) => onTvPaired(id));
+socket.on('connect', () => { statusDot.className = 'dot online'; if (screenId) registerDisplay(); });
 socket.on('disconnect', () => statusDot.className = 'dot offline');
 socket.on('force-reload', () => window.location.reload());
 socket.on('state-update', (state) => renderState(state));
 
-// Sincronización en tiempo real vía Firebase Cloud
 if (typeof listenFirebaseState === 'function') {
-  listenFirebaseState((state) => {
-    if (state) renderState(state);
-  });
+  listenFirebaseState((state) => { if (state) renderState(state); });
 }
 
-window.addEventListener('resize', () => socket.emit('report-specs', { screenId, specs: getDisplaySpecs() }));
+window.addEventListener('resize', () => {
+  if (screenId) {
+    socket.emit('report-specs', { screenId, specs: getDisplaySpecs() });
+    if (typeof reportFirebaseSpecs === 'function') reportFirebaseSpecs(screenId, getDisplaySpecs());
+  }
+});
 
 function hideAllMedia() {
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
@@ -100,16 +146,12 @@ function showNextSlide() {
     videoEl.style.display = 'block';
     videoEl.className = `media-elem ${currentFitClass}`;
     videoEl.muted = false;
-    videoEl.loop = false; // Permite avanzar al terminar
-    
+    videoEl.loop = false;
     let targetSrc = url;
     if (targetSrc.includes('/uploads/media_') && !targetSrc.includes('/uploads/tv_audio_')) {
       targetSrc = targetSrc.replace('/uploads/media_', '/uploads/tv_audio_media_');
     }
-    if (videoEl.src !== targetSrc && !videoEl.src.endsWith(targetSrc)) {
-      videoEl.src = targetSrc;
-      videoEl.load();
-    }
+    if (videoEl.src !== targetSrc && !videoEl.src.endsWith(targetSrc)) { videoEl.src = targetSrc; videoEl.load(); }
     videoEl.play().catch(() => { videoEl.muted = true; videoEl.play().catch(() => {}); });
     videoEl.onended = () => {
       currentSlideIndex = (currentSlideIndex + 1) % currentPlaylist.length;
@@ -121,7 +163,6 @@ function showNextSlide() {
     imgEl.style.display = 'block';
     imgEl.className = `media-elem ${currentFitClass}`;
     if (imgEl.src !== url && !imgEl.src.endsWith(url)) imgEl.src = url;
-
     if (currentPlaylist.length > 1) {
       const ms = Math.max(1, currentInterval || 5) * 1000;
       slideTimer = setTimeout(() => {

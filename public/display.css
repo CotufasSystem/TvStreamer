@@ -1,9 +1,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
 
 html, body {
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
+  width: 100vw; height: 100vh; overflow: hidden;
   background-color: #000;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #fff;
@@ -13,63 +11,33 @@ html, body {
 .screen-container { width: 100%; height: 100%; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .media-elem { width: 100%; height: 100%; }
 
-/* Modo Espejo & Individual */
-.mode-individual .media-elem, .mode-mirror .media-elem {
-  width: 100vw;
-  height: 100vh;
-  object-position: center;
-}
-
+.mode-individual .media-elem, .mode-mirror .media-elem { width: 100vw; height: 100vh; object-position: center; }
 .fit-contain { object-fit: contain; }
 .fit-cover { object-fit: cover; }
 .fit-fill { object-fit: fill; }
 
-/* Modo Dividido (Split) */
-.mode-split .media-elem {
-  position: absolute;
-  top: 0;
-  left: 0;
-  max-width: none;
-  max-height: none;
-  transform-origin: top left;
-  transition: transform 0.15s ease-out;
-}
+.mode-split .media-elem { position: absolute; top: 0; left: 0; max-width: none; max-height: none; transform-origin: top left; transition: transform 0.15s ease-out; }
 
 .text-elem {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  text-align: center;
-  font-size: 5vw;
-  font-weight: 800;
-  line-height: 1.3;
-  width: 100%;
-  height: 100%;
-  background: #09090b;
-  color: #fbbf24;
-  text-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  display: flex; align-items: center; justify-content: center; padding: 40px; text-align: center;
+  font-size: 5vw; font-weight: 800; line-height: 1.3; width: 100%; height: 100%;
+  background: #09090b; color: #fbbf24; text-shadow: 0 4px 20px rgba(0,0,0,0.8);
 }
 
 .tv-badge {
-  position: fixed;
-  top: 15px;
-  right: 15px;
-  background: rgba(20, 20, 25, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(10px);
-  padding: 6px 14px;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: 600;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  opacity: 0.3;
-  transition: opacity 0.3s;
+  position: fixed; top: 15px; right: 15px;
+  background: rgba(20, 20, 25, 0.8); border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px); padding: 6px 12px; border-radius: 20px;
+  font-size: 13px; font-weight: 600; z-index: 100; display: flex; align-items: center; gap: 8px;
+  opacity: 0.2; transition: opacity 0.3s;
 }
 .tv-badge:hover { opacity: 1; }
+
+.btn-unpair {
+  background: rgba(239, 68, 68, 0.3); border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
 
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .dot.online { background: #10b981; box-shadow: 0 0 8px #10b981; }
@@ -78,72 +46,30 @@ html, body {
 .empty-state { text-align: center; color: #64748b; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .empty-icon { font-size: 64px; }
 .empty-title { font-size: 28px; font-weight: 700; color: #94a3b8; }
-.empty-subtitle { font-size: 16px; max-width: 320px; }
+.empty-subtitle { font-size: 16px; max-width: 360px; }
 
-/* Overlay PIN */
+/* Overlay de Vinculación para APK TV */
 .overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.95);
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: fixed; inset: 0; background: radial-gradient(circle at center, #18181b 0%, #09090b 100%);
+  z-index: 200; display: flex; align-items: center; justify-content: center;
 }
-
 .setup-box {
-  background: #18181b;
-  border: 1px solid #27272a;
-  padding: 30px;
-  border-radius: 16px;
-  text-align: center;
-  max-width: 500px;
-  width: 92%;
+  background: #18181b; border: 2px solid #27272a; padding: 40px; border-radius: 20px;
+  text-align: center; max-width: 580px; width: 90%; box-shadow: 0 20px 50px rgba(0,0,0,0.8);
 }
+.tv-app-logo { font-size: 24px; font-weight: 800; color: #38bdf8; margin-bottom: 12px; }
+.setup-box h2 { font-size: 26px; font-weight: 700; margin-bottom: 8px; color: #fff; }
+.pin-instruction { color: #a1a1aa; font-size: 15px; line-height: 1.5; margin-bottom: 20px; }
 
 .pin-card {
-  background: #09090b;
-  border: 2px solid #3b82f6;
-  border-radius: 12px;
-  padding: 20px;
-  margin: 16px 0;
+  background: #09090b; border: 2px solid #3b82f6; border-radius: 14px; padding: 24px; margin: 16px 0;
 }
-.pin-label { font-size: 12px; font-weight: 700; color: #60a5fa; letter-spacing: 1px; }
+.pin-label { font-size: 13px; font-weight: 700; color: #60a5fa; letter-spacing: 1.5px; }
 .pin-digits {
-  font-size: 42px;
-  font-family: monospace;
-  font-weight: 900;
-  letter-spacing: 8px;
-  color: #fff;
-  margin: 10px 0;
+  font-size: 56px; font-family: monospace; font-weight: 900; letter-spacing: 10px; color: #fff; margin: 12px 0;
+  text-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
 }
-.pin-instruction { font-size: 13px; color: #a1a1aa; }
+.pin-status-row { font-size: 13px; color: #a1a1aa; display: flex; align-items: center; justify-content: center; gap: 8px; }
 
-.divider {
-  display: flex;
-  align-items: center;
-  margin: 20px 0;
-  color: #71717a;
-  font-size: 11px;
-  font-weight: 600;
-}
-.divider::before, .divider::after {
-  content: '';
-  flex: 1;
-  border-bottom: 1px solid #27272a;
-}
-.divider span { padding: 0 10px; }
-
-.screen-selector-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.btn-screen {
-  background: #27272a;
-  color: #fff;
-  border: 1px solid #3f3f46;
-  padding: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-screen:hover { background: #3b82f6; border-color: #60a5fa; }
+.setup-footer { font-size: 13px; color: #71717a; margin-top: 20px; }
+.setup-footer code { background: #27272a; padding: 3px 8px; border-radius: 6px; color: #38bdf8; font-weight: 600; }
