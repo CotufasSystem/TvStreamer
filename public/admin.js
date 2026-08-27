@@ -5,27 +5,35 @@ const defaultState = {
   screens: { 1: { type: 'empty', fit: 'contain' }, 2: { type: 'empty', fit: 'contain' }, 3: { type: 'empty', fit: 'contain' }, 4: { type: 'empty', fit: 'contain' }, 5: { type: 'empty', fit: 'contain' }, 6: { type: 'empty', fit: 'contain' }, 7: { type: 'empty', fit: 'contain' } }
 };
 let currentState = JSON.parse(JSON.stringify(defaultState)), currentDisplays = [], targetSlideshowScreenId = null, tempIndividualPlaylist = [], tempMirrorPlaylist = [], deferredInstallPrompt = null;
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstallPrompt = e; const btn = document.getElementById('btn-install-app'); if (btn) btn.style.display = 'inline-flex'; });
-function triggerPWAInstall() {
-  if (deferredInstallPrompt) { deferredInstallPrompt.prompt(); deferredInstallPrompt.userChoice.then(() => { deferredInstallPrompt = null; const b = document.getElementById('btn-install-app'); if (b) b.style.display = 'none'; }); }
-  else alert('Abre el menú del navegador y selecciona "Instalar Aplicación".');
-}
 
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => { regs.forEach(r => r.unregister()); });
+}
 
 function renderUI() {
   const tM = document.getElementById('tab-mirror'), tS = document.getElementById('tab-split'), tI = document.getElementById('tab-individual');
   const vM = document.getElementById('view-mirror'), vS = document.getElementById('view-split'), vI = document.getElementById('view-individual');
-  if (!tM || !vM) return;
-  [tM, tS, tI].forEach(t => t && t.classList.remove('active'));
-  [vM, vS, vI].forEach(v => v && (v.style.display = 'none'));
-  if (currentState.mode === 'mirror') { if (tM) tM.classList.add('active'); if (vM) vM.style.display = 'block'; renderMirrorView(); }
-  else if (currentState.mode === 'split') { if (tS) tS.classList.add('active'); if (vS) vS.style.display = 'block'; renderSplitView(); }
-  else { if (tI) tI.classList.add('active'); if (vI) vI.style.display = 'block'; renderIndividualView(); }
+  if (tM && tS && tI) {
+    [tM, tS, tI].forEach(t => t.classList.remove('active'));
+    if (currentState.mode === 'mirror') tM.classList.add('active');
+    else if (currentState.mode === 'split') tS.classList.add('active');
+    else tI.classList.add('active');
+  }
+  if (vM && vS && vI) {
+    vM.style.display = currentState.mode === 'mirror' ? 'block' : 'none';
+    vS.style.display = currentState.mode === 'split' ? 'block' : 'none';
+    vI.style.display = currentState.mode === 'individual' ? 'block' : 'none';
+  }
+  if (currentState.mode === 'mirror') renderMirrorView();
+  else if (currentState.mode === 'split') renderSplitView();
+  else renderIndividualView();
   renderDisplaysStatus();
 }
 
-function switchMode(mode) { currentState.mode = mode; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
+function switchMode(mode) {
+  currentState.mode = mode; renderUI();
+  if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+}
 
 function renderDisplaysStatus() {
   const container = document.getElementById('displays-status-container'); if (!container) return;
@@ -42,7 +50,11 @@ function renderDisplaysStatus() {
 
 function handleUnpairTv(screenId, e) {
   if (e) { e.preventDefault(); e.stopPropagation(); }
-  if (confirm(`¿Desvincular TV ${screenId}?`)) { if (typeof unpairTv === 'function') unpairTv(screenId); currentDisplays = currentDisplays.filter(d => d.screenId !== screenId); renderDisplaysStatus(); }
+  if (confirm(`¿Desvincular TV ${screenId}?`)) {
+    if (typeof unpairTv === 'function') unpairTv(screenId);
+    currentDisplays = currentDisplays.filter(d => d.screenId !== screenId);
+    renderDisplaysStatus();
+  }
 }
 
 function renderMirrorView() {
@@ -51,7 +63,7 @@ function renderMirrorView() {
   if (conf.type && conf.type !== 'empty' && (conf.src || conf.text || (conf.items && conf.items.length))) {
     box.style.display = 'flex';
     if (conf.type === 'image') content.innerHTML = `<img src="${conf.src}">`;
-    else if (conf.type === 'slideshow') content.innerHTML = `🎠 Playlist (${conf.items.length} items, ${conf.interval}s)`;
+    else if (conf.type === 'slideshow') content.innerHTML = `🎠 Playlist (${(conf.items || []).length} items, ${conf.interval || 5}s)`;
     else if (conf.type === 'video') content.innerHTML = `<video src="${conf.src}" muted autoplay loop></video>`;
     else if (conf.type === 'url') content.innerHTML = `🌐 ${conf.src}`;
     else if (conf.type === 'text') content.innerHTML = `📢 ${conf.text}`;
@@ -91,6 +103,7 @@ function renderIndividualView() {
     else if (data.type === 'video') previewHtml = `<video src="${data.src}" muted autoplay loop></video>`;
     else if (data.type === 'url') previewHtml = `<span class="no-img-text">🌐 ${data.src}</span>`;
     else if (data.type === 'text') previewHtml = `<span style="font-weight:bold;color:#fbbf24;padding:8px;">${data.text}</span>`;
+
     card.innerHTML = `
       <div class="screen-card-header"><span class="screen-title">Pantalla ${id}</span>
         <select onchange="changeScreenFit(${id}, this.value)">
@@ -126,7 +139,7 @@ function renderThumbnailGrid(containerId, countId, playlist, removeFnName) {
   if (playlist.length === 0) { container.innerHTML = `<div class="empty-playlist-msg">Lista vacía. Usa [+] para agregar.</div>`; return; }
   container.innerHTML = '';
   playlist.forEach((url, idx) => {
-    const isVid = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || url.startsWith('data:video');
+    const isVid = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && url.startsWith('data:video'));
     const card = document.createElement('div'); card.className = 'thumb-card';
     card.innerHTML = `${isVid ? `<video src="${url}" muted></video>` : `<img src="${url}">`}<span class="thumb-type-tag">${isVid ? '🎬 Video' : '🖼 Foto'}</span><button class="thumb-remove-btn" onclick="${removeFnName}(${idx})">✕</button>`;
     container.appendChild(card);
@@ -191,6 +204,13 @@ function setMirrorTab(type) {
   if (pT) pT.style.display = type === 'text' ? 'block' : 'none';
 }
 
+async function handleMirrorFileUpload(input) {
+  if (input.files.length > 0) {
+    const { url, type } = await uploadMedia(input.files[0]);
+    currentState.mirrorConfig = { type, src: url, fit: 'contain' };
+    renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+  }
+}
 function sendMirrorUrl() {
   const inEl = document.getElementById('mirror-url-input'); const s = inEl ? inEl.value.trim() : '';
   if (s) { currentState.mirrorConfig = { type: 'url', src: s, fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
@@ -202,7 +222,13 @@ function sendMirrorText() {
 function clearMirrorMedia() {
   currentState.mirrorConfig = { type: 'empty', src: null, items: [], text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
-
+async function handleSplitFileUpload(input) {
+  if (input.files.length > 0) {
+    const { url, type } = await uploadMedia(input.files[0]);
+    currentState.splitConfig.type = type; currentState.splitConfig.src = url;
+    renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+  }
+}
 function clearSplitMedia() {
   currentState.splitConfig.type = 'empty'; currentState.splitConfig.src = null; currentState.splitConfig.text = '';
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
@@ -215,6 +241,7 @@ function applySplitPreset() {
   currentState.splitConfig.rows = rows; currentState.splitConfig.cols = cols; currentState.splitConfig.layout = layout;
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
+
 function updateSplitConfig() {
   const fitEl = document.getElementById('split-fit');
   currentState.splitConfig.fit = fitEl ? fitEl.value : 'cover';
@@ -242,7 +269,10 @@ function changeScreenFit(screenId, fit) {
 function clearScreenMedia(screenId) {
   if (currentState.screens[screenId]) { currentState.screens[screenId] = { type: 'empty', src: null, text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
-
+function clearAllScreens() {
+  currentState = JSON.parse(JSON.stringify(defaultState));
+  renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+}
 function openPairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'flex'; }
 function closePairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'none'; }
 async function submitPairPin() {
@@ -251,49 +281,18 @@ async function submitPairPin() {
   const selectEl = document.getElementById('pair-target-select');
   const targetScreenId = selectEl ? selectEl.value : '1';
   const btn = document.getElementById('btn-submit-pair');
-  if (!cleanPin || cleanPin.length !== 6) return alert('Ingresa los 6 dígitos del código PIN de la TV.');
+  if (!cleanPin || cleanPin.length !== 6) return alert('Ingresa los 6 dígitos del PIN.');
   if (btn) { btn.textContent = '⏳ Vinculando...'; btn.disabled = true; }
   try {
     if (typeof pairTvWithPin === 'function') {
       await pairTvWithPin(cleanPin, targetScreenId, `TV ${targetScreenId}`);
-      alert(`🎉 ¡TV ${targetScreenId} vinculada con éxito!`);
-      closePairModal();
-      if (pinInput) pinInput.value = '';
+      alert(`🎉 ¡TV ${targetScreenId} vinculada!`);
+      closePairModal(); if (pinInput) pinInput.value = '';
     }
-  } catch (err) {
-    console.error('Pair error:', err);
-    alert('Error al vincular: ' + (err.message || 'Verifica tu conexión'));
-  } finally {
-    if (btn) { btn.textContent = 'Vincular Ahora'; btn.disabled = false; }
-  }
+  } catch (err) { alert('Error: ' + (err.message || 'Fallo')); }
+  finally { if (btn) { btn.textContent = 'Vincular Ahora'; btn.disabled = false; } }
 }
 if (typeof listenFirebaseDisplays === 'function') listenFirebaseDisplays((d) => { if (d && d.length) { currentDisplays = d; renderDisplaysStatus(); } });
 if (typeof listenFirebaseState === 'function') listenFirebaseState((s) => { if (s) { currentState = Object.assign(currentState, s); renderUI(); } });
-window.addEventListener('DOMContentLoaded', () => {
-  renderUI();
-  const mInput = document.getElementById('mirror-file-input');
-  if (mInput) mInput.addEventListener('change', async (e) => {
-    if (e.target.files.length > 0) {
-      const { url, type } = await uploadMedia(e.target.files[0]);
-      currentState.mirrorConfig = { type, src: url, fit: 'contain' };
-      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-    }
-  });
-  const sInput = document.getElementById('split-file-input');
-  if (sInput) sInput.addEventListener('change', async (e) => {
-    if (e.target.files.length > 0) {
-      const { url, type } = await uploadMedia(e.target.files[0]);
-      currentState.splitConfig.type = type; currentState.splitConfig.src = url;
-      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-    }
-  });
-  const btnReload = document.getElementById('btn-reload-all');
-  if (btnReload) btnReload.addEventListener('click', () => { if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); window.location.reload(); });
-  const btnClear = document.getElementById('btn-clear-all');
-  if (btnClear) btnClear.addEventListener('click', () => {
-    currentState = JSON.parse(JSON.stringify(defaultState));
-    renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-  });
-});
 renderUI();
 

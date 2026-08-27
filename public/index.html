@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#09090b">
   <title>TV Stream Controller Pro</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="admin.css?v=4.0">
   <!-- Firebase Firestore & Storage SDKs -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
-  <script src="firebase-sync.js?v=3.0"></script>
+  <script src="firebase-sync.js?v=4.0"></script>
 </head>
 <body>
   <div class="app-container">
@@ -20,14 +20,14 @@
         <span class="icon">📡</span>
         <div>
           <h1>TV Multi-Screen Controller</h1>
-          <span class="badge">Resolución en Vivo • Playlist Mixta con botón [+]</span>
+          <span class="badge">Nube Firebase • 7 Pantallas</span>
         </div>
       </div>
       <div class="header-actions">
         <button class="btn btn-primary" onclick="openPairModal()" style="font-size: 14px; padding: 9px 16px;">➕ Agregar TV</button>
         <button id="btn-install-app" class="btn btn-outline" style="display: none;" onclick="triggerPWAInstall()">📲 Instalar App</button>
-        <button id="btn-reload-all" class="btn btn-outline">🔄 Recargar</button>
-        <button id="btn-clear-all" class="btn btn-danger">🗑 Limpiar Todo</button>
+        <button id="btn-reload-all" class="btn btn-outline" onclick="window.location.reload(true)">🔄 Recargar</button>
+        <button id="btn-clear-all" class="btn btn-danger" onclick="clearAllScreens()">🗑 Limpiar Todo</button>
       </div>
     </header>
 
@@ -35,9 +35,11 @@
     <section class="section">
       <div class="section-title-row">
         <h2>Pantallas Conectadas & Resoluciones</h2>
-        <span class="subtitle-hint">Muestra resolución real detectada</span>
+        <span class="subtitle-hint">Estado en vivo detectado por Firebase</span>
       </div>
-      <div class="display-status-grid" id="displays-status-container"></div>
+      <div class="display-status-grid" id="displays-status-container">
+        <!-- Generado dinámicamente -->
+      </div>
     </section>
 
     <!-- LOS 3 MODOS -->
@@ -64,7 +66,7 @@
 
         <div id="mirror-panel-file" class="media-panel">
           <div class="upload-zone" onclick="document.getElementById('mirror-file-input').click()">
-            <input type="file" id="mirror-file-input" accept="image/*,video/*" style="display: none;">
+            <input type="file" id="mirror-file-input" accept="image/*,video/*" style="display: none;" onchange="handleMirrorFileUpload(this)">
             <span class="upload-icon">🎬</span>
             <p><strong>Subir Video o Imagen Única</strong></p>
           </div>
@@ -135,7 +137,7 @@
         </div>
         <div class="wall-matrix-grid" id="wall-matrix-grid"></div>
         <div class="upload-zone" onclick="document.getElementById('split-file-input').click()">
-          <input type="file" id="split-file-input" accept="image/*,video/*" style="display: none;">
+          <input type="file" id="split-file-input" accept="image/*,video/*" style="display: none;" onchange="handleSplitFileUpload(this)">
           <span class="upload-icon">🧩</span>
           <p><strong>Subir Archivo para Dividir</strong></p>
         </div>
@@ -152,7 +154,9 @@
         <h3>Modo Individual por Pantalla</h3>
         <p class="subtitle">Configura cada TV (foto, video, playlist mixta [+], web o texto).</p>
       </div>
-      <div class="individual-screens-grid" id="individual-screens-container"></div>
+      <div class="individual-screens-grid" id="individual-screens-container">
+        <!-- Renderizado de las 7 pantallas -->
+      </div>
     </section>
   </div>
 
@@ -194,7 +198,7 @@
         <button class="modal-close" onclick="closePairModal()">×</button>
       </div>
       <p class="subtitle">Ingresa el código PIN de 6 dígitos que aparece en la TV:</p>
-      <input type="text" id="pin-input" maxlength="6" placeholder="Ej: 849201" class="pin-input-field">
+      <input type="text" id="pin-input" maxlength="6" placeholder="Ej: 911679" class="pin-input-field">
       <div class="form-group" style="margin-top: 12px;">
         <label>Asignar como Pantalla:</label>
         <select id="pair-target-select">
@@ -206,6 +210,6 @@
     </div>
   </div>
 
-  <script src="admin.js?v=3.0"></script>
+  <script src="admin.js?v=4.0"></script>
 </body>
 </html>
