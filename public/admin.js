@@ -23,8 +23,13 @@ const tabMirror = document.getElementById('tab-mirror'), tabSplit = document.get
 const viewMirror = document.getElementById('view-mirror'), viewSplit = document.getElementById('view-split'), viewIndividual = document.getElementById('view-individual');
 const individualContainer = document.getElementById('individual-screens-container');
 
-socket.on('state-update', (state) => { currentState = state; renderUI(); });
+socket.on('state-update', (state) => {
+  currentState = state;
+  renderUI();
+  if (typeof updateFirebaseState === 'function') updateFirebaseState(state);
+});
 socket.on('displays-update', (displays) => { currentDisplays = displays; renderDisplaysStatus(); });
+
 
 function renderUI() {
   if (!currentState) return;

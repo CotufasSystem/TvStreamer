@@ -60,6 +60,14 @@ socket.on('connect', () => { statusDot.className = 'dot online'; registerDisplay
 socket.on('disconnect', () => statusDot.className = 'dot offline');
 socket.on('force-reload', () => window.location.reload());
 socket.on('state-update', (state) => renderState(state));
+
+// Sincronización en tiempo real vía Firebase Cloud
+if (typeof listenFirebaseState === 'function') {
+  listenFirebaseState((state) => {
+    if (state) renderState(state);
+  });
+}
+
 window.addEventListener('resize', () => socket.emit('report-specs', { screenId, specs: getDisplaySpecs() }));
 
 function hideAllMedia() {
