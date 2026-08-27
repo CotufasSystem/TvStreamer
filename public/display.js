@@ -68,26 +68,30 @@ function hideAllMedia() {
 }
 
 function isVideoUrl(url) {
-  return /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && url.startsWith('data:video'));
+  return /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && (url.startsWith('data:video') || url.startsWith('chunked://')));
 }
 
-function playVideoWithAudio(src, isLoop = true) {
+async function playVideoWithAudio(src, isLoop = true) {
   if (!videoEl || !src) return;
+  let finalSrc = src;
+  if (src.startsWith('chunked://') && typeof resolveChunkedMedia === 'function') {
+    finalSrc = await resolveChunkedMedia(src);
+  }
+
   videoEl.style.display = 'block';
   videoEl.className = `media-elem ${currentFitClass}`;
   videoEl.loop = isLoop;
   videoEl.volume = 1.0;
   videoEl.muted = false;
 
-  if (videoEl.src !== src) {
-    videoEl.src = src;
+  if (videoEl.src !== finalSrc) {
+    videoEl.src = finalSrc;
     videoEl.load();
   }
 
   const playPromise = videoEl.play();
   if (playPromise !== undefined) {
     playPromise.catch(() => {
-      // Si la política del navegador exige interacción inicial, reproducir silenciado y activar audio inmediatamente
       videoEl.muted = true;
       videoEl.play().then(() => {
         setTimeout(() => { videoEl.muted = false; }, 300);
@@ -96,7 +100,7 @@ function playVideoWithAudio(src, isLoop = true) {
   }
 }
 
-function showNextSlide() {
+async function showNextSlide() {
   if (!currentPlaylist || currentPlaylist.length === 0) return;
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
   const url = currentPlaylist[currentSlideIndex];
@@ -104,16 +108,20 @@ function showNextSlide() {
 
   if (isVideo) {
     if (imgEl) imgEl.style.display = 'none';
-    playVideoWithAudio(url, false);
+    await playVideoWithAudio(url, false);
     videoEl.onended = () => {
       currentSlideIndex = (currentSlideIndex + 1) % currentPlaylist.length;
       showNextSlide();
     };
   } else {
     if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
+    let finalImg = url;
+    if (url.startsWith('chunked://') && typeof resolveChunkedMedia === 'function') {
+      finalImg = await resolveChunkedMedia(url);
+    }
     if (imgEl) {
       imgEl.style.display = 'block'; imgEl.className = `media-elem ${currentFitClass}`;
-      if (imgEl.src !== url) imgEl.src = url;
+      if (imgEl.src !== finalImg) imgEl.src = finalImg;
       if (currentPlaylist.length > 1) {
         slideTimer = setTimeout(() => { currentSlideIndex = (currentSlideIndex + 1) % currentPlaylist.length; showNextSlide(); }, Math.max(1, currentInterval || 5) * 1000);
       }
@@ -129,18 +137,20 @@ function startSlideshow(items, intervalSeconds, fitClass) {
   showNextSlide();
 }
 
-function renderMediaElement(data, fitClass, isMuted = false, customStyle = {}) {
+async function renderMediaElement(data, fitClass, isMuted = false, customStyle = {}) {
   const { type, src, items, interval, text } = data || {};
   currentFitClass = fitClass;
   if (type === 'image' && src) {
-    if (imgEl) { imgEl.style.display = 'block'; imgEl.className = `media-elem ${fitClass}`; Object.assign(imgEl.style, customStyle); if (imgEl.src !== src) imgEl.src = src; }
+    let finalSrc = src;
+    if (src.startsWith('chunked://') && typeof resolveChunkedMedia === 'function') finalSrc = await resolveChunkedMedia(src);
+    if (imgEl) { imgEl.style.display = 'block'; imgEl.className = `media-elem ${fitClass}`; Object.assign(imgEl.style, customStyle); if (imgEl.src !== finalSrc) imgEl.src = finalSrc; }
   } else if (type === 'slideshow') {
     if (imgEl) Object.assign(imgEl.style, customStyle);
     if (videoEl) Object.assign(videoEl.style, customStyle);
     startSlideshow(items, interval, fitClass);
   } else if (type === 'video' && src) {
     Object.assign(videoEl.style, customStyle);
-    playVideoWithAudio(src, true);
+    await playVideoWithAudio(src, true);
     if (isMuted) videoEl.muted = true;
   } else if (type === 'url' && src) {
     if (frameEl) { frameEl.style.display = 'block'; frameEl.className = 'media-elem'; Object.assign(frameEl.style, customStyle); if (frameEl.src !== src) frameEl.src = src; }
@@ -152,11 +162,9 @@ function renderMediaElement(data, fitClass, isMuted = false, customStyle = {}) {
 function renderState(state) {
   if (!screenId || !state) return;
   const numId = parseInt(screenId, 10);
-  if (state.mode === 'mirror') {
-    renderMirrorMode(state.mirrorConfig);
-  } else if (state.mode === 'split') {
-    renderSplitMode(state.splitConfig);
-  } else {
+  if (state.mode === 'mirror') renderMirrorMode(state.mirrorConfig);
+  else if (state.mode === 'split') renderSplitMode(state.splitConfig);
+  else {
     const screens = state.screens || {};
     const screenData = screens[numId] || screens[String(numId)] || { type: 'empty' };
     renderIndividualMode(screenData);
@@ -203,7 +211,6 @@ function renderIndividualMode(screenData) {
   renderMediaElement(screenData, `fit-${screenData.fit || 'contain'}`, screenData.muted || false, { width: '100vw', height: '100vh', transform: 'none' });
 }
 
-// Activar audio al interactuar con el control remoto o pantalla
 window.addEventListener('click', () => { if (videoEl) { videoEl.muted = false; videoEl.volume = 1.0; } });
 window.addEventListener('keydown', () => { if (videoEl) { videoEl.muted = false; videoEl.volume = 1.0; } });
 

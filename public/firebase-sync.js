@@ -88,7 +88,7 @@ function listenUnpairSignal(screenId, callback) {
   fdb.collection('tv_unpair').doc(screenId.toString()).onSnapshot((doc) => { if (doc.exists) callback(); }, () => {});
 }
 
-// 4. ESTADO MULTIMEDIA (ENCODING DIRECTO JSON SIN ERRORES DE SCHEMA)
+// 4. ESTADO MULTIMEDIA
 function listenFirebaseState(callback) {
   const fdb = getDb(); if (!fdb) return;
   fdb.collection('tv_streamer').doc('state').onSnapshot((doc) => {
@@ -96,38 +96,83 @@ function listenFirebaseState(callback) {
     const data = doc.data();
     if (data && data.payload) {
       try { callback(JSON.parse(data.payload)); } catch (e) {}
-    } else if (data) {
-      callback(data);
-    }
+    } else if (data) callback(data);
   }, (err) => console.error('Error state:', err));
 }
 
 function updateFirebaseState(newState) {
   const fdb = getDb(); if (!fdb) return;
   try {
-    const payloadStr = JSON.stringify(newState);
     fdb.collection('tv_streamer').doc('state').set({
-      payload: payloadStr,
+      payload: JSON.stringify(newState),
       updatedAt: Date.now()
     }).catch((e) => console.error('Error actualizando estado:', e));
-  } catch (err) {
-    console.error('Error serializando estado:', err);
-  }
+  } catch (err) { console.error('Error serializando:', err); }
 }
 
-// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS
+// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS CON CHUNKING PARA VIDEOS PESADOS
+function readChunkAsBase64(blob) {
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(',')[1] || r.result);
+    r.readAsDataURL(blob);
+  });
+}
+
 async function uploadMediaFile(file) {
   const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
   if (!isVideo) {
     const compressedUrl = await compressImage(file, 960, 0.65);
     return { url: compressedUrl, type: 'image' };
   }
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve({ url: r.result, type: 'video' });
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
+
+  // Fragmentación de video en chunks de 600KB para Firestore
+  const fdb = getDb();
+  if (!fdb) throw new Error('Firestore no conectado');
+  const CHUNK_SIZE = 600 * 1024;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const mediaId = `vid_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+
+  console.log(`Subiendo video (${(file.size/1024/1024).toFixed(1)}MB) en ${totalChunks} partes...`);
+  for (let i = 0; i < totalChunks; i++) {
+    const slice = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
+    const base64Chunk = await readChunkAsBase64(slice);
+    await fdb.collection('tv_chunks').doc(`${mediaId}_${i}`).set({
+      data: base64Chunk, index: i, total: totalChunks, type: file.type || 'video/mp4'
+    });
+  }
+
+  const chunkedUri = `chunked://${mediaId}?total=${totalChunks}&type=${encodeURIComponent(file.type || 'video/mp4')}`;
+  return { url: chunkedUri, type: 'video' };
+}
+
+// Reensamblaje de video desde chunks
+async function resolveChunkedMedia(chunkedUrl) {
+  const fdb = getDb();
+  if (!fdb || !chunkedUrl.startsWith('chunked://')) return chunkedUrl;
+  const match = chunkedUrl.match(/chunked:\/\/([^?]+)\?total=(\d+)&type=([^&]+)/);
+  if (!match) return chunkedUrl;
+
+  const mediaId = match[1], total = parseInt(match[2], 10), mimeType = decodeURIComponent(match[3]);
+  const promises = [];
+  for (let i = 0; i < total; i++) {
+    promises.push(fdb.collection('tv_chunks').doc(`${mediaId}_${i}`).get());
+  }
+
+  const docs = await Promise.all(promises);
+  const byteArrays = [];
+  for (const doc of docs) {
+    if (!doc.exists) return chunkedUrl;
+    const b64 = doc.data().data;
+    const binStr = atob(b64);
+    const len = binStr.length;
+    const bytes = new Uint8Array(len);
+    for (let j = 0; j < len; j++) bytes[j] = binStr.charCodeAt(j);
+    byteArrays.push(bytes);
+  }
+
+  const blob = new Blob(byteArrays, { type: mimeType });
+  return URL.createObjectURL(blob);
 }
 
 function reportFirebaseSpecs(screenId, specs) {
