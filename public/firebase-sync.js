@@ -110,7 +110,7 @@ function updateFirebaseState(newState) {
   } catch (err) { console.error('Error serializando:', err); }
 }
 
-// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS CON CHUNKING NATIVO
+// 5. SUBIDA ULTRARRÁPIDA PARALELA
 function readChunkAsBase64(blob) {
   return new Promise((resolve) => {
     const r = new FileReader();
@@ -126,26 +126,39 @@ async function uploadMediaFile(file) {
     return { url: compressedUrl, type: 'image' };
   }
 
-  const fdb = getDb();
-  if (!fdb) throw new Error('Firestore no disponible');
-  const CHUNK_SIZE = 500 * 1024;
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-  const mediaId = `vid_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-
-  console.log(`Subiendo video (${(file.size/1024/1024).toFixed(1)}MB) en ${totalChunks} partes...`);
-  for (let i = 0; i < totalChunks; i++) {
-    const slice = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
-    const base64Chunk = await readChunkAsBase64(slice);
-    await fdb.collection('tv_chunks').doc(`${mediaId}_${i}`).set({
-      data: base64Chunk, index: i, total: totalChunks, type: file.type || 'video/mp4'
+  // Si el video pesa menos de 650KB, enviar como Data URL directo sin chunking
+  if (file.size < 650 * 1024) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve({ url: r.result, type: 'video' });
+      r.onerror = reject;
+      r.readAsDataURL(file);
     });
   }
 
+  // Videos mayores: subida paralela simultánea
+  const fdb = getDb();
+  if (!fdb) throw new Error('Firestore no disponible');
+  const CHUNK_SIZE = 600 * 1024;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const mediaId = `vid_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+
+  const uploadPromises = [];
+  for (let i = 0; i < totalChunks; i++) {
+    const slice = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
+    uploadPromises.push((async (idx, sl) => {
+      const base64Chunk = await readChunkAsBase64(sl);
+      await fdb.collection('tv_chunks').doc(`${mediaId}_${idx}`).set({
+        data: base64Chunk, index: idx, total: totalChunks, type: file.type || 'video/mp4'
+      });
+    })(i, slice));
+  }
+
+  await Promise.all(uploadPromises);
   const chunkedUri = `chunked://${mediaId}?total=${totalChunks}&type=${encodeURIComponent(file.type || 'video/mp4')}`;
   return { url: chunkedUri, type: 'video' };
 }
 
-// Reensamblaje ultrarrápido con decodificador binario nativo C++
 async function resolveChunkedMedia(chunkedUrl) {
   const fdb = getDb();
   if (!fdb || !chunkedUrl || !chunkedUrl.startsWith('chunked://')) return chunkedUrl;
