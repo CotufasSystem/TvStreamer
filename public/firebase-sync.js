@@ -47,18 +47,47 @@ function compressImage(file, maxDimension = 960, quality = 0.65) {
   });
 }
 
+// Sanitización estricta para Firestore (evita 'invalid nested entity' y arrays 2D)
 function sanitizeForFirestore(state) {
-  const clean = JSON.parse(JSON.stringify(state));
-  if (clean.splitConfig && Array.isArray(clean.splitConfig.layout)) {
-    clean.splitConfig.layout = JSON.stringify(clean.splitConfig.layout);
+  const clean = {
+    mode: state.mode || 'individual',
+    mirrorConfig: {
+      type: state.mirrorConfig && state.mirrorConfig.type ? state.mirrorConfig.type : 'empty',
+      src: state.mirrorConfig && state.mirrorConfig.src ? state.mirrorConfig.src : '',
+      fit: state.mirrorConfig && state.mirrorConfig.fit ? state.mirrorConfig.fit : 'contain',
+      interval: state.mirrorConfig && state.mirrorConfig.interval ? state.mirrorConfig.interval : 5,
+      items: state.mirrorConfig && Array.isArray(state.mirrorConfig.items) ? state.mirrorConfig.items : [],
+      text: state.mirrorConfig && state.mirrorConfig.text ? state.mirrorConfig.text : ''
+    },
+    splitConfig: {
+      type: state.splitConfig && state.splitConfig.type ? state.splitConfig.type : 'empty',
+      src: state.splitConfig && state.splitConfig.src ? state.splitConfig.src : '',
+      rows: state.splitConfig && state.splitConfig.rows ? state.splitConfig.rows : 1,
+      cols: state.splitConfig && state.splitConfig.cols ? state.splitConfig.cols : 7,
+      fit: state.splitConfig && state.splitConfig.fit ? state.splitConfig.fit : 'cover',
+      text: state.splitConfig && state.splitConfig.text ? state.splitConfig.text : '',
+      layoutStr: JSON.stringify(state.splitConfig && state.splitConfig.layout ? state.splitConfig.layout : [[1,2,3,4,5,6,7]])
+    },
+    screens: {}
+  };
+  for (let i = 1; i <= 7; i++) {
+    const sc = state.screens && state.screens[i] ? state.screens[i] : { type: 'empty' };
+    clean.screens[String(i)] = {
+      type: sc.type || 'empty',
+      src: sc.src || '',
+      fit: sc.fit || 'contain',
+      interval: sc.interval || 5,
+      items: Array.isArray(sc.items) ? sc.items : [],
+      text: sc.text || ''
+    };
   }
   return clean;
 }
 
 function parseFromFirestore(data) {
   if (!data) return data;
-  if (data.splitConfig && typeof data.splitConfig.layout === 'string') {
-    try { data.splitConfig.layout = JSON.parse(data.splitConfig.layout); } catch (e) {}
+  if (data.splitConfig && data.splitConfig.layoutStr) {
+    try { data.splitConfig.layout = JSON.parse(data.splitConfig.layoutStr); } catch (e) {}
   }
   return data;
 }
@@ -115,7 +144,7 @@ function listenFirebaseState(callback) {
 function updateFirebaseState(newState) {
   const fdb = getDb(); if (!fdb) return;
   const cleanState = sanitizeForFirestore(newState);
-  fdb.collection('tv_streamer').doc('state').set(cleanState, { merge: true }).catch((e) => {
+  fdb.collection('tv_streamer').doc('state').set(cleanState).catch((e) => {
     console.error('Error actualizando estado:', e);
   });
 }

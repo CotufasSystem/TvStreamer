@@ -13,22 +13,15 @@ function getDisplaySpecs() {
 
 function initDisplay() {
   const urlParams = new URLSearchParams(window.location.search);
-  const paramId = urlParams.get('id');
-  const storedId = localStorage.getItem('tv_screen_id');
-  const targetId = paramId || storedId;
-
-  if (targetId) {
-    onTvPaired(targetId);
-  } else {
-    showPairingScreen();
-  }
+  const paramId = urlParams.get('id') || localStorage.getItem('tv_screen_id');
+  if (paramId) onTvPaired(paramId);
+  else showPairingScreen();
 }
 
 function showPairingScreen() {
   if (setupOverlay) setupOverlay.style.display = 'flex';
   currentPin = Math.floor(100000 + Math.random() * 900000).toString();
   if (pinDisplayEl) pinDisplayEl.textContent = `${currentPin.slice(0, 3)} - ${currentPin.slice(3)}`;
-
   if (typeof listenTvPinPairing === 'function') {
     listenTvPinPairing(currentPin, (assignedId) => { onTvPaired(assignedId); });
   }
@@ -40,7 +33,6 @@ function onTvPaired(assignedId) {
   if (badgeIdEl) badgeIdEl.textContent = screenId;
   if (emptyIdEl) emptyIdEl.textContent = screenId;
   if (setupOverlay) setupOverlay.style.display = 'none';
-
   registerDisplay();
   if (typeof listenUnpairSignal === 'function') {
     listenUnpairSignal(screenId, () => unpairThisTv());
@@ -70,13 +62,38 @@ if (typeof listenFirebaseState === 'function') {
 function hideAllMedia() {
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
   if (imgEl) imgEl.style.display = 'none';
-  if (videoEl) { if (!videoEl.paused) videoEl.pause(); videoEl.style.display = 'none'; }
+  if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
   if (frameEl) frameEl.style.display = 'none';
   if (textEl) textEl.style.display = 'none';
 }
 
 function isVideoUrl(url) {
   return /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && url.startsWith('data:video'));
+}
+
+function playVideoWithAudio(src, isLoop = true) {
+  if (!videoEl || !src) return;
+  videoEl.style.display = 'block';
+  videoEl.className = `media-elem ${currentFitClass}`;
+  videoEl.loop = isLoop;
+  videoEl.volume = 1.0;
+  videoEl.muted = false;
+
+  if (videoEl.src !== src) {
+    videoEl.src = src;
+    videoEl.load();
+  }
+
+  const playPromise = videoEl.play();
+  if (playPromise !== undefined) {
+    playPromise.catch(() => {
+      // Si la política del navegador exige interacción inicial, reproducir silenciado y activar audio inmediatamente
+      videoEl.muted = true;
+      videoEl.play().then(() => {
+        setTimeout(() => { videoEl.muted = false; }, 300);
+      }).catch(() => {});
+    });
+  }
 }
 
 function showNextSlide() {
@@ -87,14 +104,13 @@ function showNextSlide() {
 
   if (isVideo) {
     if (imgEl) imgEl.style.display = 'none';
-    if (videoEl) {
-      videoEl.style.display = 'block'; videoEl.className = `media-elem ${currentFitClass}`; videoEl.muted = false; videoEl.loop = false;
-      if (videoEl.src !== url) { videoEl.src = url; videoEl.load(); }
-      videoEl.play().catch(() => { videoEl.muted = true; videoEl.play().catch(() => {}); });
-      videoEl.onended = () => { currentSlideIndex = (currentSlideIndex + 1) % currentPlaylist.length; showNextSlide(); };
-    }
+    playVideoWithAudio(url, false);
+    videoEl.onended = () => {
+      currentSlideIndex = (currentSlideIndex + 1) % currentPlaylist.length;
+      showNextSlide();
+    };
   } else {
-    if (videoEl) { videoEl.style.display = 'none'; if (!videoEl.paused) videoEl.pause(); }
+    if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
     if (imgEl) {
       imgEl.style.display = 'block'; imgEl.className = `media-elem ${currentFitClass}`;
       if (imgEl.src !== url) imgEl.src = url;
@@ -115,6 +131,7 @@ function startSlideshow(items, intervalSeconds, fitClass) {
 
 function renderMediaElement(data, fitClass, isMuted = false, customStyle = {}) {
   const { type, src, items, interval, text } = data || {};
+  currentFitClass = fitClass;
   if (type === 'image' && src) {
     if (imgEl) { imgEl.style.display = 'block'; imgEl.className = `media-elem ${fitClass}`; Object.assign(imgEl.style, customStyle); if (imgEl.src !== src) imgEl.src = src; }
   } else if (type === 'slideshow') {
@@ -122,12 +139,9 @@ function renderMediaElement(data, fitClass, isMuted = false, customStyle = {}) {
     if (videoEl) Object.assign(videoEl.style, customStyle);
     startSlideshow(items, interval, fitClass);
   } else if (type === 'video' && src) {
-    if (videoEl) {
-      videoEl.style.display = 'block'; videoEl.className = `media-elem ${fitClass}`; Object.assign(videoEl.style, customStyle);
-      videoEl.loop = true; videoEl.muted = isMuted;
-      if (videoEl.src !== src) { videoEl.src = src; videoEl.load(); }
-      videoEl.play().catch(() => { videoEl.muted = true; videoEl.play().catch(() => {}); });
-    }
+    Object.assign(videoEl.style, customStyle);
+    playVideoWithAudio(src, true);
+    if (isMuted) videoEl.muted = true;
   } else if (type === 'url' && src) {
     if (frameEl) { frameEl.style.display = 'block'; frameEl.className = 'media-elem'; Object.assign(frameEl.style, customStyle); if (frameEl.src !== src) frameEl.src = src; }
   } else if (type === 'text' && text) {
@@ -189,7 +203,8 @@ function renderIndividualMode(screenData) {
   renderMediaElement(screenData, `fit-${screenData.fit || 'contain'}`, screenData.muted || false, { width: '100vw', height: '100vh', transform: 'none' });
 }
 
-window.addEventListener('click', () => { if (videoEl) videoEl.muted = false; });
-window.addEventListener('keydown', () => { if (videoEl) videoEl.muted = false; });
+// Activar audio al interactuar con el control remoto o pantalla
+window.addEventListener('click', () => { if (videoEl) { videoEl.muted = false; videoEl.volume = 1.0; } });
+window.addEventListener('keydown', () => { if (videoEl) { videoEl.muted = false; videoEl.volume = 1.0; } });
 
 initDisplay();
