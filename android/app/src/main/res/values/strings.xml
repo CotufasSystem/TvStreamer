@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TV Streamer</string>
+    <string name="title_activity_main">TV Streamer</string>
+    <string name="package_name">com.cotufassystem.tvstreamer</string>
+    <string name="custom_url_scheme">com.cotufassystem.tvstreamer</string>
+</resources>

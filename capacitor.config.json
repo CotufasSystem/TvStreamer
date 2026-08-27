@@ -1,0 +1,10 @@
+{
+  "appId": "com.cotufassystem.tvstreamer",
+  "appName": "TV Streamer Display",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://tvstreamer-57955.web.app/display.html",
+    "cleartext": true
+  }
+}
