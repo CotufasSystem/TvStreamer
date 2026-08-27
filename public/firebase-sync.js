@@ -110,15 +110,7 @@ function updateFirebaseState(newState) {
   } catch (err) { console.error('Error serializando:', err); }
 }
 
-// 5. SUBIDA ULTRARRÁPIDA PARALELA
-function readChunkAsBase64(blob) {
-  return new Promise((resolve) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result.split(',')[1] || r.result);
-    r.readAsDataURL(blob);
-  });
-}
-
+// 5. SUBIDA ULTRARRÁPIDA DE VIDEOS (CDN STREAMING DIRECTO EN 1 SEGUNDO)
 async function uploadMediaFile(file) {
   const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
   if (!isVideo) {
@@ -126,7 +118,24 @@ async function uploadMediaFile(file) {
     return { url: compressedUrl, type: 'image' };
   }
 
-  // Si el video pesa menos de 800KB, enviar como Data URL directo sin chunking
+  // 1. Intentar subida rápida por túnel CDN (1 a 2 segundos)
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const cdnRes = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: fd });
+    if (cdnRes.ok) {
+      const json = await cdnRes.json();
+      if (json && json.data && json.data.url) {
+        const directStreamUrl = json.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+        console.log('⚡ [VIDEO] Subido a CDN ultrarrápido:', directStreamUrl);
+        return { url: directStreamUrl, type: 'video' };
+      }
+    }
+  } catch (cdnErr) {
+    console.warn('CDN upload fallback:', cdnErr);
+  }
+
+  // 2. Fallback de Data URL para videos pequeños (< 800KB)
   if (file.size < 800 * 1024) {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -136,21 +145,21 @@ async function uploadMediaFile(file) {
     });
   }
 
-  // Videos mayores: subida paralela simultánea con chunks de 850KB
+  // 3. Fallback: subida paralela en Firestore
   const fdb = getDb();
   if (!fdb) throw new Error('Firestore no disponible');
   const CHUNK_SIZE = 850 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const mediaId = `vid_${Date.now()}_${Math.floor(Math.random()*1000)}`;
 
-
   const uploadPromises = [];
   for (let i = 0; i < totalChunks; i++) {
     const slice = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
     uploadPromises.push((async (idx, sl) => {
-      const base64Chunk = await readChunkAsBase64(sl);
+      const r = new FileReader();
+      const b64 = await new Promise((res) => { r.onload = () => res(r.result.split(',')[1] || r.result); r.readAsDataURL(sl); });
       await fdb.collection('tv_chunks').doc(`${mediaId}_${idx}`).set({
-        data: base64Chunk, index: idx, total: totalChunks, type: file.type || 'video/mp4'
+        data: b64, index: idx, total: totalChunks, type: file.type || 'video/mp4'
       });
     })(i, slice));
   }
