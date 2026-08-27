@@ -126,8 +126,8 @@ async function uploadMediaFile(file) {
     return { url: compressedUrl, type: 'image' };
   }
 
-  // Si el video pesa menos de 650KB, enviar como Data URL directo sin chunking
-  if (file.size < 650 * 1024) {
+  // Si el video pesa menos de 800KB, enviar como Data URL directo sin chunking
+  if (file.size < 800 * 1024) {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve({ url: r.result, type: 'video' });
@@ -136,12 +136,13 @@ async function uploadMediaFile(file) {
     });
   }
 
-  // Videos mayores: subida paralela simultánea
+  // Videos mayores: subida paralela simultánea con chunks de 850KB
   const fdb = getDb();
   if (!fdb) throw new Error('Firestore no disponible');
-  const CHUNK_SIZE = 600 * 1024;
+  const CHUNK_SIZE = 850 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const mediaId = `vid_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+
 
   const uploadPromises = [];
   for (let i = 0; i < totalChunks; i++) {
