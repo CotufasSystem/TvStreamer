@@ -5,9 +5,10 @@ let currentSlideIndex = 0;
 let currentPlaylist = [];
 let currentInterval = 5;
 let currentFitClass = 'fit-contain';
-const socket = io();
+const socket = (typeof io === 'function') ? io() : { on: () => {}, emit: () => {} };
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
 
 const imgEl = document.getElementById('display-image');
 const videoEl = document.getElementById('display-video');

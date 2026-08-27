@@ -1,4 +1,5 @@
-const socket = io();
+const socket = (typeof io === 'function') ? io() : { on: () => {}, emit: () => {} };
+
 let currentState = null, currentDisplays = [], targetSlideshowScreenId = null;
 let tempIndividualPlaylist = [], tempMirrorPlaylist = [], deferredInstallPrompt = null;
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
