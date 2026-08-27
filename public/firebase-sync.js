@@ -23,7 +23,6 @@ function getDb() {
 }
 getDb();
 
-// Compresión instantánea client-side (< 40KB) para transferencia en tiempo real
 function compressImage(file, maxDimension = 960, quality = 0.65) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -48,7 +47,23 @@ function compressImage(file, maxDimension = 960, quality = 0.65) {
   });
 }
 
-// 1. ESCUCHAR PIN EN TV
+function sanitizeForFirestore(state) {
+  const clean = JSON.parse(JSON.stringify(state));
+  if (clean.splitConfig && Array.isArray(clean.splitConfig.layout)) {
+    clean.splitConfig.layout = JSON.stringify(clean.splitConfig.layout);
+  }
+  return clean;
+}
+
+function parseFromFirestore(data) {
+  if (!data) return data;
+  if (data.splitConfig && typeof data.splitConfig.layout === 'string') {
+    try { data.splitConfig.layout = JSON.parse(data.splitConfig.layout); } catch (e) {}
+  }
+  return data;
+}
+
+// 1. PIN EN TV
 function listenTvPinPairing(pin, onPairedCallback) {
   const fdb = getDb(); if (!fdb || !pin) return;
   const cleanPin = pin.toString().trim().replace(/\D/g, '');
@@ -64,7 +79,7 @@ function listenTvPinPairing(pin, onPairedCallback) {
   }, () => {});
 }
 
-// 2. VINCULAR PIN DESDE EL EMISOR
+// 2. VINCULAR PIN
 async function pairTvWithPin(pin, targetScreenId, tvName) {
   const fdb = getDb(); if (!fdb) throw new Error('Firestore no disponible');
   const cleanPin = pin.toString().trim().replace(/\D/g, ''), screenNum = parseInt(targetScreenId, 10);
@@ -93,18 +108,19 @@ function listenUnpairSignal(screenId, callback) {
 function listenFirebaseState(callback) {
   const fdb = getDb(); if (!fdb) return;
   fdb.collection('tv_streamer').doc('state').onSnapshot((doc) => {
-    if (doc.exists) callback(doc.data());
+    if (doc.exists) callback(parseFromFirestore(doc.data()));
   }, (err) => console.error('Error state:', err));
 }
 
 function updateFirebaseState(newState) {
   const fdb = getDb(); if (!fdb) return;
-  fdb.collection('tv_streamer').doc('state').set(newState, { merge: true }).catch((e) => {
+  const cleanState = sanitizeForFirestore(newState);
+  fdb.collection('tv_streamer').doc('state').set(cleanState, { merge: true }).catch((e) => {
     console.error('Error actualizando estado:', e);
   });
 }
 
-// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS (100% LOCAL SIN STORAGE CORS)
+// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS
 async function uploadMediaFile(file) {
   const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
   if (!isVideo) {
