@@ -1,5 +1,5 @@
 const socket = (typeof io === 'function') ? io() : { on: () => {}, emit: () => {} };
-let screenId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentInterval = 5, currentFitClass = 'fit-contain';
+let screenId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentInterval = 5, currentFitClass = 'fit-contain', currentlyPlayingSrc = null;
 
 const setupOverlay = document.getElementById('setup-overlay'), pinDisplayEl = document.getElementById('display-pin-code');
 const badgeIdEl = document.getElementById('badge-id'), statusDot = document.getElementById('status-dot'), emptyIdEl = document.getElementById('empty-id');
@@ -42,6 +42,7 @@ function onTvPaired(assignedId) {
 function unpairThisTv() {
   localStorage.removeItem('tv_screen_id');
   screenId = null;
+  currentlyPlayingSrc = null;
   hideAllMedia();
   showPairingScreen();
 }
@@ -65,18 +66,27 @@ function hideAllMedia() {
   if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
   if (frameEl) frameEl.style.display = 'none';
   if (textEl) textEl.style.display = 'none';
+  currentlyPlayingSrc = null;
 }
 
 function isVideoUrl(url) {
-  return /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && (url.startsWith('data:video') || url.startsWith('chunked://')));
+  return /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && (url.startsWith('data:video') || url.startsWith('chunked://') || url.includes('tmpfiles.org')));
 }
 
 async function playVideoWithAudio(src, isLoop = true) {
   if (!videoEl || !src) return;
+  if (currentlyPlayingSrc === src && !videoEl.paused) return; // Ya se está reproduciendo, no interrumpir
+
   let finalSrc = src;
   if (src.startsWith('chunked://') && typeof resolveChunkedMedia === 'function') {
     finalSrc = await resolveChunkedMedia(src);
   }
+
+  currentlyPlayingSrc = src;
+  if (imgEl) imgEl.style.display = 'none';
+  if (frameEl) frameEl.style.display = 'none';
+  if (textEl) textEl.style.display = 'none';
+  if (emptyEl) emptyEl.style.display = 'none';
 
   videoEl.style.display = 'block';
   videoEl.className = `media-elem ${currentFitClass}`;
@@ -84,10 +94,8 @@ async function playVideoWithAudio(src, isLoop = true) {
   videoEl.volume = 1.0;
   videoEl.muted = false;
 
-  if (videoEl.src !== finalSrc) {
-    videoEl.src = finalSrc;
-    videoEl.load();
-  }
+  videoEl.src = finalSrc;
+  videoEl.load();
 
   const p = videoEl.play();
   if (p !== undefined) {
@@ -173,8 +181,8 @@ function renderState(state) {
 
 function renderMirrorMode(mirrorConfig) {
   if (screenContainer) screenContainer.className = 'screen-container mode-mirror';
-  hideAllMedia();
   if (!mirrorConfig || mirrorConfig.type === 'empty' || (!mirrorConfig.src && !mirrorConfig.text && (!mirrorConfig.items || !mirrorConfig.items.length))) {
+    hideAllMedia();
     if (emptyEl) emptyEl.style.display = 'flex'; return;
   }
   if (emptyEl) emptyEl.style.display = 'none';
@@ -183,8 +191,7 @@ function renderMirrorMode(mirrorConfig) {
 
 function renderSplitMode(splitConfig) {
   if (screenContainer) screenContainer.className = 'screen-container mode-split';
-  hideAllMedia();
-  if (!splitConfig || splitConfig.type === 'empty' || (!splitConfig.src && !splitConfig.text)) { if (emptyEl) emptyEl.style.display = 'flex'; return; }
+  if (!splitConfig || splitConfig.type === 'empty' || (!splitConfig.src && !splitConfig.text)) { hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return; }
   const { rows, cols, layout, fit, muted } = splitConfig;
   let targetRow = -1, targetCol = -1;
   for (let r = 0; r < (layout || []).length; r++) {
@@ -193,7 +200,7 @@ function renderSplitMode(splitConfig) {
     }
     if (targetRow !== -1) break;
   }
-  if (targetRow === -1 || targetCol === -1) { if (emptyEl) emptyEl.style.display = 'flex'; return; }
+  if (targetRow === -1 || targetCol === -1) { hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return; }
   if (emptyEl) emptyEl.style.display = 'none';
   const posX = -(targetCol * 100), posY = -(targetRow * 100);
   renderMediaElement(splitConfig, `fit-${fit || 'cover'}`, (targetRow === 0 && targetCol === 0 ? (muted || false) : true), {
@@ -203,8 +210,8 @@ function renderSplitMode(splitConfig) {
 
 function renderIndividualMode(screenData) {
   if (screenContainer) screenContainer.className = 'screen-container mode-individual';
-  hideAllMedia();
   if (!screenData || screenData.type === 'empty' || (!screenData.src && !screenData.text && (!screenData.items || !screenData.items.length))) {
+    hideAllMedia();
     if (emptyEl) emptyEl.style.display = 'flex'; return;
   }
   if (emptyEl) emptyEl.style.display = 'none';
