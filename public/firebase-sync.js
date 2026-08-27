@@ -23,7 +23,7 @@ function getDb() {
 }
 getDb();
 
-// Compresión rápida de imagen (< 50KB) para transmisión instantánea en Firestore
+// Compresión instantánea client-side (< 40KB) para transferencia en tiempo real
 function compressImage(file, maxDimension = 960, quality = 0.65) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -104,7 +104,7 @@ function updateFirebaseState(newState) {
   });
 }
 
-// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS
+// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS (100% LOCAL SIN STORAGE CORS)
 async function uploadMediaFile(file) {
   const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
   if (!isVideo) {
