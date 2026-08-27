@@ -47,51 +47,6 @@ function compressImage(file, maxDimension = 960, quality = 0.65) {
   });
 }
 
-// Sanitización estricta para Firestore (evita 'invalid nested entity' y arrays 2D)
-function sanitizeForFirestore(state) {
-  const clean = {
-    mode: state.mode || 'individual',
-    mirrorConfig: {
-      type: state.mirrorConfig && state.mirrorConfig.type ? state.mirrorConfig.type : 'empty',
-      src: state.mirrorConfig && state.mirrorConfig.src ? state.mirrorConfig.src : '',
-      fit: state.mirrorConfig && state.mirrorConfig.fit ? state.mirrorConfig.fit : 'contain',
-      interval: state.mirrorConfig && state.mirrorConfig.interval ? state.mirrorConfig.interval : 5,
-      items: state.mirrorConfig && Array.isArray(state.mirrorConfig.items) ? state.mirrorConfig.items : [],
-      text: state.mirrorConfig && state.mirrorConfig.text ? state.mirrorConfig.text : ''
-    },
-    splitConfig: {
-      type: state.splitConfig && state.splitConfig.type ? state.splitConfig.type : 'empty',
-      src: state.splitConfig && state.splitConfig.src ? state.splitConfig.src : '',
-      rows: state.splitConfig && state.splitConfig.rows ? state.splitConfig.rows : 1,
-      cols: state.splitConfig && state.splitConfig.cols ? state.splitConfig.cols : 7,
-      fit: state.splitConfig && state.splitConfig.fit ? state.splitConfig.fit : 'cover',
-      text: state.splitConfig && state.splitConfig.text ? state.splitConfig.text : '',
-      layoutStr: JSON.stringify(state.splitConfig && state.splitConfig.layout ? state.splitConfig.layout : [[1,2,3,4,5,6,7]])
-    },
-    screens: {}
-  };
-  for (let i = 1; i <= 7; i++) {
-    const sc = state.screens && state.screens[i] ? state.screens[i] : { type: 'empty' };
-    clean.screens[String(i)] = {
-      type: sc.type || 'empty',
-      src: sc.src || '',
-      fit: sc.fit || 'contain',
-      interval: sc.interval || 5,
-      items: Array.isArray(sc.items) ? sc.items : [],
-      text: sc.text || ''
-    };
-  }
-  return clean;
-}
-
-function parseFromFirestore(data) {
-  if (!data) return data;
-  if (data.splitConfig && data.splitConfig.layoutStr) {
-    try { data.splitConfig.layout = JSON.parse(data.splitConfig.layoutStr); } catch (e) {}
-  }
-  return data;
-}
-
 // 1. PIN EN TV
 function listenTvPinPairing(pin, onPairedCallback) {
   const fdb = getDb(); if (!fdb || !pin) return;
@@ -133,20 +88,31 @@ function listenUnpairSignal(screenId, callback) {
   fdb.collection('tv_unpair').doc(screenId.toString()).onSnapshot((doc) => { if (doc.exists) callback(); }, () => {});
 }
 
-// 4. ESTADO MULTIMEDIA
+// 4. ESTADO MULTIMEDIA (ENCODING DIRECTO JSON SIN ERRORES DE SCHEMA)
 function listenFirebaseState(callback) {
   const fdb = getDb(); if (!fdb) return;
   fdb.collection('tv_streamer').doc('state').onSnapshot((doc) => {
-    if (doc.exists) callback(parseFromFirestore(doc.data()));
+    if (!doc.exists) return;
+    const data = doc.data();
+    if (data && data.payload) {
+      try { callback(JSON.parse(data.payload)); } catch (e) {}
+    } else if (data) {
+      callback(data);
+    }
   }, (err) => console.error('Error state:', err));
 }
 
 function updateFirebaseState(newState) {
   const fdb = getDb(); if (!fdb) return;
-  const cleanState = sanitizeForFirestore(newState);
-  fdb.collection('tv_streamer').doc('state').set(cleanState).catch((e) => {
-    console.error('Error actualizando estado:', e);
-  });
+  try {
+    const payloadStr = JSON.stringify(newState);
+    fdb.collection('tv_streamer').doc('state').set({
+      payload: payloadStr,
+      updatedAt: Date.now()
+    }).catch((e) => console.error('Error actualizando estado:', e));
+  } catch (err) {
+    console.error('Error serializando estado:', err);
+  }
 }
 
 // 5. SUBIDA ULTRARRÁPIDA DE MEDIOS
