@@ -261,26 +261,36 @@ function clearScreenMedia(screenId) { socket.emit('clear-screens', screenId); }
 function openPairModal() { document.getElementById('pair-modal').style.display = 'flex'; }
 function closePairModal() { document.getElementById('pair-modal').style.display = 'none'; }
 async function submitPairPin() {
-  const pin = document.getElementById('pin-input').value.trim(), targetScreenId = document.getElementById('pair-target-select').value;
-  if (!pin || pin.length < 6) return alert('PIN de 6 dígitos requerido');
+  const pinInput = document.getElementById('pin-input');
+  const cleanPin = pinInput.value.replace(/\D/g, '');
+  const targetScreenId = document.getElementById('pair-target-select').value;
+  const btn = event.target;
 
-  if (typeof pairTvWithPin === 'function') {
-    try {
-      await pairTvWithPin(pin, targetScreenId, `TV ${targetScreenId}`);
-      alert(`¡TV ${targetScreenId} vinculada con éxito vía Firebase!`);
-      closePairModal();
-      document.getElementById('pin-input').value = '';
-      return;
-    } catch (e) {
-      console.warn('Firebase pair fallback to socket:', e);
-    }
+  if (!cleanPin || cleanPin.length !== 6) {
+    return alert('Por favor ingresa los 6 dígitos del código PIN (Ej: 211119).');
   }
 
-  socket.emit('pair-pin', { pin, targetScreenId }, (res) => {
-    if (res.success) { alert(`¡Vinculada a TV ${res.screenId}!`); closePairModal(); document.getElementById('pin-input').value = ''; }
-    else alert(res.message || 'Error al vincular');
-  });
+  const oldText = btn.textContent;
+  btn.textContent = '⏳ Vinculando...';
+  btn.disabled = true;
+
+  try {
+    if (typeof pairTvWithPin === 'function') {
+      await pairTvWithPin(cleanPin, targetScreenId, `TV ${targetScreenId}`);
+      alert(`🎉 ¡TV ${targetScreenId} vinculada con éxito!`);
+      closePairModal();
+      pinInput.value = '';
+      return;
+    }
+  } catch (err) {
+    console.warn('Pair error:', err);
+    alert(err.message || 'Error al vincular con Firebase');
+  } finally {
+    btn.textContent = oldText;
+    btn.disabled = false;
+  }
 }
+
 
 document.getElementById('btn-reload-all').addEventListener('click', () => socket.emit('reload-displays'));
 document.getElementById('btn-clear-all').addEventListener('click', () => socket.emit('clear-screens', 'all'));
