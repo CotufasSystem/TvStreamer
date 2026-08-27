@@ -8,7 +8,9 @@ const firebaseConfig = {
   measurementId: "G-7M2LLSD5G6"
 };
 
-let db = null, storage = null, isFirebaseReady = false;
+let db = null;
+let storage = null;
+let isFirebaseReady = false;
 
 if (typeof firebase !== 'undefined') {
   try {
@@ -16,56 +18,57 @@ if (typeof firebase !== 'undefined') {
     db = firebase.firestore();
     storage = firebase.storage();
     isFirebaseReady = true;
-    console.log('[FIREBASE] Firestore Cloud inicializado.');
+    console.log('✅ [FIREBASE] Firestore Cloud conectado correctamente.');
   } catch (err) {
-    console.error('[FIREBASE] Error inicializando SDK:', err);
+    console.error('❌ [FIREBASE] Error al inicializar:', err);
   }
 }
 
-// 1. ESCUCHAR VINCULACIÓN DE PIN EN LA TV
+// 1. ESCUCHAR CÓDIGO PIN EN LA PANTALLA DE TV
 function listenTvPinPairing(pin, onPairedCallback) {
   if (!isFirebaseReady || !db || !pin) return;
-  const cleanPin = pin.trim().replace(/\D/g, '');
+  const cleanPin = pin.toString().trim().replace(/\D/g, '');
 
-  try {
-    // Registrar PIN activo en Firestore
-    db.collection('tv_pins').doc(cleanPin).set({
-      pin: cleanPin,
-      status: 'waiting',
-      createdAt: Date.now()
-    }, { merge: true });
+  console.log(`📡 [TV] Registrando PIN ${cleanPin} en Firestore...`);
+  const pinDoc = db.collection('tv_pins').doc(cleanPin);
 
-    // Escuchar en tiempo real si el emisor asigna una pantalla
-    const unsubscribe = db.collection('tv_pins').doc(cleanPin).onSnapshot((doc) => {
-      if (doc.exists) {
-        const data = doc.data();
-        if (data && data.assignedScreenId) {
-          unsubscribe();
-          db.collection('tv_pins').doc(cleanPin).delete().catch(() => {});
-          onPairedCallback(data.assignedScreenId);
-        }
-      }
-    }, (err) => console.error('[FIREBASE] Error escuchando PIN:', err));
-  } catch (e) {
-    console.error('[FIREBASE] Excepción al registrar PIN:', e);
-  }
+  pinDoc.set({
+    pin: cleanPin,
+    paired: false,
+    assignedScreenId: null,
+    createdAt: Date.now()
+  }).catch((e) => console.error('Error creando PIN en Firestore:', e));
+
+  const unsubscribe = pinDoc.onSnapshot((snapshot) => {
+    if (!snapshot.exists) return;
+    const data = snapshot.data();
+    if (data && data.assignedScreenId) {
+      console.log(`🎉 [TV] ¡PIN ${cleanPin} vinculado a Pantalla ${data.assignedScreenId}!`);
+      unsubscribe();
+      pinDoc.delete().catch(() => {});
+      onPairedCallback(data.assignedScreenId);
+    }
+  }, (err) => console.error('Error escuchando PIN:', err));
 }
 
-// 2. VINCULAR PIN DESDE EL EMISOR (CELULAR)
+// 2. VINCULAR PIN DESDE EL PANEL DE CONTROL (CELULAR)
 async function pairTvWithPin(pin, targetScreenId, tvName) {
-  if (!isFirebaseReady || !db) throw new Error('Firebase Firestore no está conectado');
-  const cleanPin = pin.trim().replace(/\D/g, '');
+  if (!isFirebaseReady || !db) throw new Error('Firestore no está conectado');
+  const cleanPin = pin.toString().trim().replace(/\D/g, '');
   const screenNum = parseInt(targetScreenId, 10);
 
-  // Escribir asignación de pantalla en el documento del PIN
-  await db.collection('tv_pins').doc(cleanPin).set({
+  console.log(`🔗 [EMISOR] Vinculando PIN ${cleanPin} a TV ${screenNum}...`);
+  const pinDoc = db.collection('tv_pins').doc(cleanPin);
+
+  await pinDoc.set({
+    pin: cleanPin,
     assignedScreenId: screenNum,
     tvName: tvName || `TV ${screenNum}`,
-    pairedAt: Date.now(),
-    status: 'paired'
+    paired: true,
+    pairedAt: Date.now()
   }, { merge: true });
 
-  // Registrar TV activa en la lista global de pantallas
+  // Guardar en la lista de pantallas conectadas
   await db.collection('tv_streamer').doc('displays').set({
     [screenNum]: {
       screenId: screenNum,
@@ -95,22 +98,22 @@ function listenUnpairSignal(screenId, callback) {
   }, () => {});
 }
 
-// 4. ESTADO DE TRANSMISIÓN MULTIMEDIA
+// 4. SINCRONIZACIÓN DE ESTADO MULTIMEDIA GLOBAL
 function listenFirebaseState(callback) {
   if (!isFirebaseReady || !db) return;
   db.collection('tv_streamer').doc('state').onSnapshot((doc) => {
     if (doc.exists) callback(doc.data());
-  }, (err) => console.error('[FIREBASE] Error escuchando state:', err));
+  }, (err) => console.error('Error escuchando state:', err));
 }
 
 function updateFirebaseState(newState) {
   if (!isFirebaseReady || !db) return;
-  db.collection('tv_streamer').doc('state').set(newState, { merge: true }).catch((err) => {
-    console.error('[FIREBASE] Error guardando state:', err);
+  db.collection('tv_streamer').doc('state').set(newState, { merge: true }).catch((e) => {
+    console.error('Error guardando state en Firestore:', e);
   });
 }
 
-// 5. SUBIDA A FIREBASE STORAGE
+// 5. SUBIDA A STORAGE
 async function uploadToFirebaseStorage(file) {
   if (!isFirebaseReady || !storage) throw new Error('Storage no disponible');
   const filename = `media_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '')}`;
@@ -120,7 +123,7 @@ async function uploadToFirebaseStorage(file) {
   return { url, type: isVideo ? 'video' : 'image' };
 }
 
-// 6. ESPECIFICACIONES DE PANTALLA Y PRESENCIA
+// 6. PRESENCIA Y SPECS
 function reportFirebaseSpecs(screenId, specs) {
   if (!isFirebaseReady || !db || !screenId) return;
   db.collection('tv_streamer').doc('displays').set({

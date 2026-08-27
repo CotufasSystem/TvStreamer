@@ -7,11 +7,9 @@
   <title>TV Display App</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="display.css">
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <!-- Firebase SDKs Dual -->
+  <!-- Firebase Firestore & Storage SDKs -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
   <script src="firebase-sync.js"></script>
 </head>
@@ -26,7 +24,7 @@
       <div class="pin-card">
         <span class="pin-label">CÓDIGO DE VINCULACIÓN:</span>
         <div id="display-pin-code" class="pin-digits">--- ---</div>
-        <div class="pin-status-row"><span class="dot online"></span> Esperando señal del emisor...</div>
+        <div class="pin-status-row"><span class="dot online"></span> Conectado a la nube • Esperando vinculación...</div>
       </div>
 
       <div class="setup-footer">
@@ -38,7 +36,7 @@
   <!-- Badge flotante de TV vinculada -->
   <div id="tv-badge" class="tv-badge">
     <span>TV <span id="badge-id">?</span></span>
-    <span id="status-dot" class="dot offline"></span>
+    <span id="status-dot" class="dot online"></span>
     <button class="btn-unpair" onclick="unpairThisTv()" title="Desvincular">✕</button>
   </div>
 
