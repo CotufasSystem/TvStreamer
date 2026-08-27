@@ -89,9 +89,9 @@ async function playVideoWithAudio(src, isLoop = true) {
     videoEl.load();
   }
 
-  const playPromise = videoEl.play();
-  if (playPromise !== undefined) {
-    playPromise.catch(() => {
+  const p = videoEl.play();
+  if (p !== undefined) {
+    p.catch(() => {
       videoEl.muted = true;
       videoEl.play().then(() => {
         setTimeout(() => { videoEl.muted = false; }, 300);

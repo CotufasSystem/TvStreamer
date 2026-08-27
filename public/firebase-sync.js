@@ -110,7 +110,7 @@ function updateFirebaseState(newState) {
   } catch (err) { console.error('Error serializando:', err); }
 }
 
-// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS CON CHUNKING PARA VIDEOS PESADOS
+// 5. SUBIDA ULTRARRÁPIDA DE MEDIOS CON CHUNKING NATIVO
 function readChunkAsBase64(blob) {
   return new Promise((resolve) => {
     const r = new FileReader();
@@ -126,10 +126,9 @@ async function uploadMediaFile(file) {
     return { url: compressedUrl, type: 'image' };
   }
 
-  // Fragmentación de video en chunks de 600KB para Firestore
   const fdb = getDb();
-  if (!fdb) throw new Error('Firestore no conectado');
-  const CHUNK_SIZE = 600 * 1024;
+  if (!fdb) throw new Error('Firestore no disponible');
+  const CHUNK_SIZE = 500 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const mediaId = `vid_${Date.now()}_${Math.floor(Math.random()*1000)}`;
 
@@ -146,10 +145,10 @@ async function uploadMediaFile(file) {
   return { url: chunkedUri, type: 'video' };
 }
 
-// Reensamblaje de video desde chunks
+// Reensamblaje ultrarrápido con decodificador binario nativo C++
 async function resolveChunkedMedia(chunkedUrl) {
   const fdb = getDb();
-  if (!fdb || !chunkedUrl.startsWith('chunked://')) return chunkedUrl;
+  if (!fdb || !chunkedUrl || !chunkedUrl.startsWith('chunked://')) return chunkedUrl;
   const match = chunkedUrl.match(/chunked:\/\/([^?]+)\?total=(\d+)&type=([^&]+)/);
   if (!match) return chunkedUrl;
 
@@ -160,18 +159,14 @@ async function resolveChunkedMedia(chunkedUrl) {
   }
 
   const docs = await Promise.all(promises);
-  const byteArrays = [];
-  for (const doc of docs) {
-    if (!doc.exists) return chunkedUrl;
+  const arrayBuffers = await Promise.all(docs.map(async (doc) => {
+    if (!doc.exists) throw new Error('Chunk not found');
     const b64 = doc.data().data;
-    const binStr = atob(b64);
-    const len = binStr.length;
-    const bytes = new Uint8Array(len);
-    for (let j = 0; j < len; j++) bytes[j] = binStr.charCodeAt(j);
-    byteArrays.push(bytes);
-  }
+    const res = await fetch(`data:${mimeType};base64,${b64}`);
+    return await res.arrayBuffer();
+  }));
 
-  const blob = new Blob(byteArrays, { type: mimeType });
+  const blob = new Blob(arrayBuffers, { type: mimeType });
   return URL.createObjectURL(blob);
 }
 
