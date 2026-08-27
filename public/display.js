@@ -1,5 +1,5 @@
 const socket = (typeof io === 'function') ? io() : { on: () => {}, emit: () => {} };
-let screenId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentInterval = 5, currentFitClass = 'fit-contain', currentlyPlayingSrc = null;
+let screenId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentInterval = 5, currentFitClass = 'fit-contain', currentlyPlayingSrc = null, activeBlobUrl = null;
 
 const setupOverlay = document.getElementById('setup-overlay'), pinDisplayEl = document.getElementById('display-pin-code');
 const badgeIdEl = document.getElementById('badge-id'), statusDot = document.getElementById('status-dot'), emptyIdEl = document.getElementById('empty-id');
@@ -43,8 +43,16 @@ function unpairThisTv() {
   localStorage.removeItem('tv_screen_id');
   screenId = null;
   currentlyPlayingSrc = null;
+  cleanActiveLocalBlob();
   hideAllMedia();
   showPairingScreen();
+}
+
+function cleanActiveLocalBlob() {
+  if (activeBlobUrl) {
+    try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
+    activeBlobUrl = null;
+  }
 }
 
 function registerDisplay() {
@@ -67,22 +75,27 @@ function hideAllMedia() {
   if (frameEl) frameEl.style.display = 'none';
   if (textEl) textEl.style.display = 'none';
   currentlyPlayingSrc = null;
+  cleanActiveLocalBlob();
 }
 
 function isVideoUrl(url) {
-  return /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && (url.startsWith('data:video') || url.startsWith('chunked://') || url.includes('tmpfiles.org')));
+  return /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && (url.startsWith('data:video') || url.startsWith('tvvideo://') || url.startsWith('chunked://')));
 }
 
 async function playVideoWithAudio(src, isLoop = true) {
   if (!videoEl || !src) return;
-  if (currentlyPlayingSrc === src && !videoEl.paused) return; // Ya se está reproduciendo, no interrumpir
+  if (currentlyPlayingSrc === src && !videoEl.paused) return;
 
   let finalSrc = src;
-  if (src.startsWith('chunked://') && typeof resolveChunkedMedia === 'function') {
-    finalSrc = await resolveChunkedMedia(src);
+  if (src.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') {
+    cleanActiveLocalBlob();
+    finalSrc = await loadVideoFromFirestore(src);
+    activeBlobUrl = finalSrc;
   }
 
+  if (!finalSrc) return;
   currentlyPlayingSrc = src;
+
   if (imgEl) imgEl.style.display = 'none';
   if (frameEl) frameEl.style.display = 'none';
   if (textEl) textEl.style.display = 'none';
@@ -124,8 +137,8 @@ async function showNextSlide() {
   } else {
     if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
     let finalImg = url;
-    if (url.startsWith('chunked://') && typeof resolveChunkedMedia === 'function') {
-      finalImg = await resolveChunkedMedia(url);
+    if (url.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') {
+      finalImg = await loadVideoFromFirestore(url);
     }
     if (imgEl) {
       imgEl.style.display = 'block'; imgEl.className = `media-elem ${currentFitClass}`;
@@ -150,7 +163,7 @@ async function renderMediaElement(data, fitClass, isMuted = false, customStyle =
   currentFitClass = fitClass;
   if (type === 'image' && src) {
     let finalSrc = src;
-    if (src.startsWith('chunked://') && typeof resolveChunkedMedia === 'function') finalSrc = await resolveChunkedMedia(src);
+    if (src.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') finalSrc = await loadVideoFromFirestore(src);
     if (imgEl) { imgEl.style.display = 'block'; imgEl.className = `media-elem ${fitClass}`; Object.assign(imgEl.style, customStyle); if (imgEl.src !== finalSrc) imgEl.src = finalSrc; }
   } else if (type === 'slideshow') {
     if (imgEl) Object.assign(imgEl.style, customStyle);

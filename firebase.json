@@ -10,6 +10,10 @@
     ],
     "rewrites": [
       {
+        "source": "/api/uploadVideo",
+        "function": "uploadVideo"
+      },
+      {
         "source": "/tv",
         "destination": "/display.html"
       },
@@ -29,5 +33,8 @@
   },
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "functions": {
+    "source": "functions"
   }
 }

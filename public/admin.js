@@ -4,7 +4,7 @@ const defaultState = {
   splitConfig: { type: 'empty', src: null, rows: 1, cols: 7, layout: [[1, 2, 3, 4, 5, 6, 7]], fit: 'cover', text: '' },
   screens: { 1: { type: 'empty', fit: 'contain' }, 2: { type: 'empty', fit: 'contain' }, 3: { type: 'empty', fit: 'contain' }, 4: { type: 'empty', fit: 'contain' }, 5: { type: 'empty', fit: 'contain' }, 6: { type: 'empty', fit: 'contain' }, 7: { type: 'empty', fit: 'contain' } }
 };
-let currentState = JSON.parse(JSON.stringify(defaultState)), currentDisplays = [], targetSlideshowScreenId = null, tempIndividualPlaylist = [], tempMirrorPlaylist = [], deferredInstallPrompt = null;
+let currentState = JSON.parse(JSON.stringify(defaultState)), currentDisplays = [], targetSlideshowScreenId = null, tempIndividualPlaylist = [], tempMirrorPlaylist = [];
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => { regs.forEach(r => r.unregister()); });
@@ -13,25 +13,12 @@ if ('serviceWorker' in navigator) {
 function renderUI() {
   const tM = document.getElementById('tab-mirror'), tS = document.getElementById('tab-split'), tI = document.getElementById('tab-individual');
   const vM = document.getElementById('view-mirror'), vS = document.getElementById('view-split'), vI = document.getElementById('view-individual');
-  if (tM && tS && tI) {
-    [tM, tS, tI].forEach(t => t.classList.remove('active'));
-    if (currentState.mode === 'mirror') tM.classList.add('active');
-    else if (currentState.mode === 'split') tS.classList.add('active');
-    else tI.classList.add('active');
-  }
-  if (vM && vS && vI) {
-    vM.style.display = currentState.mode === 'mirror' ? 'block' : 'none';
-    vS.style.display = currentState.mode === 'split' ? 'block' : 'none';
-    vI.style.display = currentState.mode === 'individual' ? 'block' : 'none';
-  }
-  if (currentState.mode === 'mirror') renderMirrorView();
-  else if (currentState.mode === 'split') renderSplitView();
-  else renderIndividualView();
+  if (tM && tS && tI) { [tM, tS, tI].forEach(t => t.classList.remove('active')); if (currentState.mode === 'mirror') tM.classList.add('active'); else if (currentState.mode === 'split') tS.classList.add('active'); else tI.classList.add('active'); }
+  if (vM && vS && vI) { vM.style.display = currentState.mode === 'mirror' ? 'block' : 'none'; vS.style.display = currentState.mode === 'split' ? 'block' : 'none'; vI.style.display = currentState.mode === 'individual' ? 'block' : 'none'; }
+  if (currentState.mode === 'mirror') renderMirrorView(); else if (currentState.mode === 'split') renderSplitView(); else renderIndividualView();
   renderDisplaysStatus();
 }
-
 function switchMode(mode) { currentState.mode = mode; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
-
 function renderDisplaysStatus() {
   const container = document.getElementById('displays-status-container'); if (!container) return;
   const displayMap = new Map(); currentDisplays.forEach(d => { if (d && d.screenId) displayMap.set(d.screenId, d); });
@@ -44,7 +31,6 @@ function renderDisplaysStatus() {
     container.appendChild(chip);
   }
 }
-
 function handleUnpairTv(screenId, e) {
   if (e) { e.preventDefault(); e.stopPropagation(); }
   if (confirm(`¿Desvincular TV ${screenId}?`)) {
@@ -54,13 +40,14 @@ function handleUnpairTv(screenId, e) {
   }
 }
 
+
+
 function getMediaPreviewHtml(src, type) {
   if (!src) return '<span class="no-img-text">Sin contenido</span>';
-  if (src.startsWith('chunked://')) return '<div style="color:#38bdf8; font-weight:bold; padding:10px;">🎬 Video Cargado</div>';
+  if (src.startsWith('tvvideo://') || src.startsWith('chunked://')) return '<div style="color:#38bdf8; font-weight:bold; padding:10px;">🎬 Video Cargado</div>';
   if (type === 'video' || src.startsWith('data:video')) return `<video src="${src}" muted autoplay loop></video>`;
   return `<img src="${src}">`;
 }
-
 
 function renderMirrorView() {
   const conf = currentState.mirrorConfig || {}, box = document.getElementById('mirror-preview-box'), content = document.getElementById('mirror-preview-content');
@@ -127,8 +114,9 @@ function renderIndividualView() {
   }
 }
 
-async function uploadMedia(file) {
-  if (typeof uploadMediaFile === 'function') return await uploadMediaFile(file);
+
+async function uploadMedia(file, targetKey = 'screen_1') {
+  if (typeof uploadMediaFile === 'function') return await uploadMediaFile(file, targetKey);
   const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name || '');
   const r = new FileReader();
   return new Promise((res) => { r.onload = () => res({ url: r.result, type: isVideo ? 'video' : 'image' }); r.readAsDataURL(file); });
@@ -141,9 +129,9 @@ function renderThumbnailGrid(containerId, countId, playlist, removeFnName) {
   if (playlist.length === 0) { container.innerHTML = `<div class="empty-playlist-msg">Lista vacía. Usa [+] para agregar.</div>`; return; }
   container.innerHTML = '';
   playlist.forEach((url, idx) => {
-    const isVid = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && (url.startsWith('data:video') || url.startsWith('chunked://')));
+    const isVid = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(url) || (url && (url.startsWith('data:video') || url.startsWith('tvvideo://') || url.startsWith('chunked://')));
     const card = document.createElement('div'); card.className = 'thumb-card';
-    let thumbInner = isVid ? (url.startsWith('chunked://') ? '<span style="font-size:24px;">🎬</span>' : `<video src="${url}" muted></video>`) : `<img src="${url}">`;
+    let thumbInner = isVid ? (url.startsWith('tvvideo://') || url.startsWith('chunked://') ? '<span style="font-size:24px;">🎬</span>' : `<video src="${url}" muted></video>`) : `<img src="${url}">`;
     card.innerHTML = `${thumbInner}<span class="thumb-type-tag">${isVid ? '🎬 Video' : '🖼 Foto'}</span><button class="thumb-remove-btn" onclick="${removeFnName}(${idx})">✕</button>`;
     container.appendChild(card);
   });
@@ -159,10 +147,9 @@ function openSlideshowModal(screenId) {
   const m = document.getElementById('slideshow-modal'); if (m) m.style.display = 'flex';
 }
 function closeSlideshowModal() { const m = document.getElementById('slideshow-modal'); if (m) m.style.display = 'none'; }
-
 async function handleAppendIndividualFiles(input) {
   if (!input.files || input.files.length === 0) return;
-  for (const f of input.files) { const { url } = await uploadMedia(f); tempIndividualPlaylist.push(url); }
+  for (const f of input.files) { const { url } = await uploadMedia(f, `screen_${targetSlideshowScreenId}`); tempIndividualPlaylist.push(url); }
   input.value = ''; renderThumbnailGrid('modal-playlist-grid', 'modal-playlist-count', tempIndividualPlaylist, 'removeIndividualPlaylistItem');
 }
 function removeIndividualPlaylistItem(idx) {
@@ -174,14 +161,12 @@ function submitIndividualSlideshow() {
   const inEl = document.getElementById('modal-slideshow-interval');
   const interval = parseInt(inEl ? inEl.value : '5', 10) || 5;
   currentState.screens[targetSlideshowScreenId] = { type: 'slideshow', items: tempIndividualPlaylist, interval, fit: 'contain' };
-  renderUI();
-  if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+  renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
   closeSlideshowModal();
 }
-
 async function handleAppendMirrorFiles(input) {
   if (!input.files || input.files.length === 0) return;
-  for (const f of input.files) { const { url } = await uploadMedia(f); tempMirrorPlaylist.push(url); }
+  for (const f of input.files) { const { url } = await uploadMedia(f, 'mirror'); tempMirrorPlaylist.push(url); }
   input.value = ''; renderThumbnailGrid('mirror-playlist-grid', 'mirror-playlist-count', tempMirrorPlaylist, 'removeMirrorPlaylistItem');
 }
 function removeMirrorPlaylistItem(idx) {
@@ -193,9 +178,9 @@ function sendMirrorSlideshow() {
   const inEl = document.getElementById('mirror-interval-input');
   const interval = parseInt(inEl ? inEl.value : '5', 10) || 5;
   currentState.mirrorConfig = { type: 'slideshow', items: tempMirrorPlaylist, interval, fit: 'contain' };
-  renderUI();
-  if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+  renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
+
 
 function setMirrorTab(type) {
   document.querySelectorAll('#view-mirror .subtab-btn').forEach(b => b.classList.remove('active'));
@@ -206,14 +191,14 @@ function setMirrorTab(type) {
   if (pU) pU.style.display = type === 'url' ? 'block' : 'none';
   if (pT) pT.style.display = type === 'text' ? 'block' : 'none';
 }
-
 async function handleMirrorFileUpload(input) {
   if (input.files.length > 0) {
-    const { url, type } = await uploadMedia(input.files[0]);
+    const { url, type } = await uploadMedia(input.files[0], 'mirror');
     currentState.mirrorConfig = { type, src: url, fit: 'contain' };
     renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
   }
 }
+
 function sendMirrorUrl() {
   const inEl = document.getElementById('mirror-url-input'); const s = inEl ? inEl.value.trim() : '';
   if (s) { currentState.mirrorConfig = { type: 'url', src: s, fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
@@ -223,17 +208,18 @@ function sendMirrorText() {
   if (t) { currentState.mirrorConfig = { type: 'text', text: t, fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
 function clearMirrorMedia() {
+  if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore('mirror');
   currentState.mirrorConfig = { type: 'empty', src: null, items: [], text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
-
 async function handleSplitFileUpload(input) {
   if (input.files.length > 0) {
-    const { url, type } = await uploadMedia(input.files[0]);
+    const { url, type } = await uploadMedia(input.files[0], 'split');
     currentState.splitConfig.type = type; currentState.splitConfig.src = url;
     renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
   }
 }
 function clearSplitMedia() {
+  if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore('split');
   currentState.splitConfig.type = 'empty'; currentState.splitConfig.src = null; currentState.splitConfig.text = '';
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
@@ -251,9 +237,10 @@ function updateSplitConfig() {
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
 
+
 async function uploadScreenMedia(screenId, input) {
   if (input.files.length > 0) {
-    const { url, type } = await uploadMedia(input.files[0]);
+    const { url, type } = await uploadMedia(input.files[0], `screen_${screenId}`);
     currentState.screens[screenId] = { type, src: url, fit: 'contain' };
     renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
   }
@@ -269,10 +256,16 @@ function promptScreenText(screenId) {
 function changeScreenFit(screenId, fit) {
   if (currentState.screens[screenId]) { currentState.screens[screenId].fit = fit; if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
+
 function clearScreenMedia(screenId) {
+  if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore(`screen_${screenId}`);
   if (currentState.screens[screenId]) { currentState.screens[screenId] = { type: 'empty', src: null, text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
-function clearAllScreens() { currentState = JSON.parse(JSON.stringify(defaultState)); renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
+function clearAllScreens() {
+  for (let id = 1; id <= 7; id++) { if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore(`screen_${id}`); }
+  if (typeof deleteVideoFromFirestore === 'function') { deleteVideoFromFirestore('mirror'); deleteVideoFromFirestore('split'); }
+  currentState = JSON.parse(JSON.stringify(defaultState)); renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+}
 
 
 function openPairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'flex'; }
@@ -291,7 +284,6 @@ async function submitPairPin() {
   } catch (err) { alert('Error: ' + (err.message || 'Fallo')); }
   finally { if (btn) { btn.textContent = 'Vincular Ahora'; btn.disabled = false; } }
 }
-
 
 if (typeof listenFirebaseDisplays === 'function') listenFirebaseDisplays((d) => { if (d && d.length) { currentDisplays = d; renderDisplaysStatus(); } });
 if (typeof listenFirebaseState === 'function') listenFirebaseState((s) => { if (s) { currentState = Object.assign(currentState, s); renderUI(); } });

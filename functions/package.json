@@ -1,0 +1,20 @@
+{
+  "name": "tvstreamer-functions",
+  "description": "Cloud Functions for TVStreamer video uploads",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^11.8.0",
+    "firebase-functions": "^4.3.1",
+    "busboy": "^1.6.0",
+    "cors": "^2.8.5"
+  }
+}
