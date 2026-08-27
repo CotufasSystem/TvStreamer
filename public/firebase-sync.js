@@ -1,7 +1,8 @@
-// Sincronización en la nube mediante Firebase
+// Sincronización ultrarrápida mediante Firebase Realtime Database
 const firebaseConfig = {
   apiKey: "AIzaSyBc-USadbOqE8pWBsTvkkUW5yUTS53JloQ",
   authDomain: "tvstreamer-57955.firebaseapp.com",
+  databaseURL: "https://tvstreamer-57955-default-rtdb.firebaseio.com",
   projectId: "tvstreamer-57955",
   storageBucket: "tvstreamer-57955.firebasestorage.app",
   messagingSenderId: "109918885056",
@@ -9,41 +10,37 @@ const firebaseConfig = {
   measurementId: "G-7M2LLSD5G6"
 };
 
-let db = null;
+let rtdb = null;
 let storage = null;
 let isFirebaseReady = false;
 
 if (typeof firebase !== 'undefined') {
   try {
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.firestore();
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    rtdb = firebase.database();
     storage = firebase.storage();
     isFirebaseReady = true;
-    console.log('[FIREBASE] Conectado a la nube de Google Firebase');
+    console.log('[FIREBASE RTDB] Conectado a Realtime Database');
   } catch (err) {
-    console.warn('[FIREBASE] Error inicializando SDK:', err);
+    console.warn('[FIREBASE RTDB] Error inicializando SDK:', err);
   }
 }
 
-// Escuchar cambios en la TV desde la nube de Firebase
+// Escuchar cambios de estado en tiempo real (Latencia < 50ms)
 function listenFirebaseState(callback) {
-  if (!isFirebaseReady || !db) return;
-  db.collection('tv_streamer').doc('state').onSnapshot((doc) => {
-    if (doc.exists) {
-      const data = doc.data();
-      callback(data);
-    }
-  }, (err) => console.warn('[FIREBASE] Snapshot error:', err));
+  if (!isFirebaseReady || !rtdb) return;
+  rtdb.ref('tv_streamer/state').on('value', (snapshot) => {
+    const val = snapshot.val();
+    if (val) callback(val);
+  });
 }
 
-// Guardar cambios desde el Panel de Control a la nube de Firebase
-async function updateFirebaseState(newState) {
-  if (!isFirebaseReady || !db) return;
-  try {
-    await db.collection('tv_streamer').doc('state').set(newState, { merge: true });
-  } catch (err) {
-    console.warn('[FIREBASE] Error actualizando estado:', err);
-  }
+// Guardar cambios desde el Panel de Control a Realtime Database
+function updateFirebaseState(newState) {
+  if (!isFirebaseReady || !rtdb) return;
+  rtdb.ref('tv_streamer/state').set(newState).catch((err) => {
+    console.warn('[FIREBASE RTDB] Error actualizando estado:', err);
+  });
 }
 
 // Subir archivo a Firebase Storage
@@ -57,14 +54,29 @@ async function uploadToFirebaseStorage(file) {
   return { url: downloadUrl, type: isVideo ? 'video' : 'image' };
 }
 
-// Registrar especificaciones de pantalla en Firebase
+// Registrar presencia y especificaciones de TV (Detección de conexión en vivo)
 function reportFirebaseSpecs(screenId, specs) {
-  if (!isFirebaseReady || !db || !screenId) return;
-  db.collection('tv_streamer').doc('displays').set({
-    [screenId]: {
-      screenId,
-      specs,
-      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-    }
-  }, { merge: true }).catch(() => {});
+  if (!isFirebaseReady || !rtdb || !screenId) return;
+  const tvRef = rtdb.ref(`tv_streamer/displays/${screenId}`);
+  
+  // Guardar specs y marcar online
+  tvRef.set({
+    screenId,
+    specs,
+    online: true,
+    lastSeen: firebase.database.ServerValue.TIMESTAMP
+  });
+
+  // Si la TV se desconecta o apaga, marcar offline automáticamente en Firebase
+  tvRef.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+}
+
+// Escuchar lista de pantallas conectadas en vivo para el panel Admin
+function listenFirebaseDisplays(callback) {
+  if (!isFirebaseReady || !rtdb) return;
+  rtdb.ref('tv_streamer/displays').on('value', (snapshot) => {
+    const val = snapshot.val() || {};
+    const list = Object.values(val);
+    callback(list);
+  });
 }

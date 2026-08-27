@@ -47,7 +47,12 @@ function initDisplay() {
   }
 }
 
-function registerDisplay(requestPin) { socket.emit('register-display', { screenId, requestPin, specs: getDisplaySpecs() }); }
+function registerDisplay(requestPin) {
+  const specs = getDisplaySpecs();
+  socket.emit('register-display', { screenId, requestPin, specs });
+  if (typeof reportFirebaseSpecs === 'function' && screenId) reportFirebaseSpecs(screenId, specs);
+}
+
 function setManualScreenId(id) {
   screenId = id; localStorage.setItem('tv_screen_id', id);
   badgeIdEl.textContent = id; emptyIdEl.textContent = id;

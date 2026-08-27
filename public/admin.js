@@ -30,6 +30,16 @@ socket.on('state-update', (state) => {
 });
 socket.on('displays-update', (displays) => { currentDisplays = displays; renderDisplaysStatus(); });
 
+if (typeof listenFirebaseDisplays === 'function') {
+  listenFirebaseDisplays((displays) => {
+    if (displays && displays.length) {
+      currentDisplays = displays;
+      renderDisplaysStatus();
+    }
+  });
+}
+
+
 
 function renderUI() {
   if (!currentState) return;
