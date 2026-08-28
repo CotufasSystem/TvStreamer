@@ -102,16 +102,13 @@ function unpairTv(screenId) {
   deleteVideoFromFirestore(screenId, activeRoom);
 }
 
-// Escuchar si la pantalla fue eliminada en el admin
+// Escuchar si la pantalla fue eliminada en el admin (o no existe)
 function listenDisplayActive(screenId, roomId, onUnpaired) {
   const fdb = getDb(); if (!fdb || !screenId || !roomId) return () => {};
-  let initialized = false;
   return fdb.collection('rooms').doc(roomId).collection('displays').doc(screenId.toString()).onSnapshot((doc) => {
-    if (!initialized) {
-      if (doc.exists) initialized = true;
-      return;
+    if (!doc.exists) {
+      onUnpaired();
     }
-    if (!doc.exists) onUnpaired();
   }, () => {});
 }
 
