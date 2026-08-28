@@ -3,7 +3,7 @@ let screenId = null, currentRoomId = null, currentPin = null, slideTimer = null,
 let unpairListenerUnsub = null;
 
 const setupOverlay = document.getElementById('setup-overlay'), pinDisplayEl = document.getElementById('display-pin-code');
-const badgeIdEl = document.getElementById('badge-id'), statusDot = document.getElementById('status-dot'), emptyIdEl = document.getElementById('empty-id');
+const badgeEl = document.getElementById('tv-badge'), badgeIdEl = document.getElementById('badge-id'), emptyIdEl = document.getElementById('empty-id');
 const screenContainer = document.getElementById('screen-container'), imgEl = document.getElementById('display-image'), videoEl = document.getElementById('display-video');
 const frameEl = document.getElementById('display-frame'), textEl = document.getElementById('display-text'), emptyEl = document.getElementById('empty-state');
 
@@ -31,7 +31,11 @@ async function initDisplay() {
 }
 
 function showPairingScreen() {
+  hideAllMedia();
+  if (badgeEl) badgeEl.style.display = 'none';
+  if (emptyEl) emptyEl.style.display = 'none';
   if (setupOverlay) setupOverlay.style.display = 'flex';
+
   currentPin = Math.floor(100000 + Math.random() * 900000).toString();
   if (pinDisplayEl) pinDisplayEl.textContent = `${currentPin.slice(0, 3)} - ${currentPin.slice(3)}`;
   if (typeof listenTvPinPairing === 'function') {
@@ -48,8 +52,10 @@ function onTvPaired(assignedId, roomId) {
   localStorage.setItem('tv_screen_id', screenId);
   localStorage.setItem('tv_screen_room', currentRoomId);
   if (badgeIdEl) badgeIdEl.textContent = `${screenId} (${roomId.replace('sala_', '#')})`;
+  if (badgeEl) badgeEl.style.display = 'flex';
   if (emptyIdEl) emptyIdEl.textContent = screenId;
   if (setupOverlay) setupOverlay.style.display = 'none';
+  if (emptyEl) emptyEl.style.display = 'flex';
 
   registerDisplay();
   if (typeof listenDisplayActive === 'function') {
@@ -77,7 +83,6 @@ function unpairThisTv() {
   currentRoomId = null;
   currentlyPlayingSrc = null;
   cleanActiveLocalBlob();
-  hideAllMedia();
   showPairingScreen();
 }
 
