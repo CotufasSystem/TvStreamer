@@ -12,16 +12,22 @@ function getDisplaySpecs() {
   return { width: w, height: h, resLabel: `${w}x${h}`, aspect: `${w/d}:${h/d}` };
 }
 
-function initDisplay() {
+async function initDisplay() {
   const urlParams = new URLSearchParams(window.location.search);
-  const paramId = urlParams.get('id');
-  const paramRoom = urlParams.get('room');
-  const savedId = localStorage.getItem('tv_screen_id');
-  const savedRoom = localStorage.getItem('tv_screen_room');
+  const paramId = urlParams.get('id'), paramRoom = urlParams.get('room');
+  const savedId = localStorage.getItem('tv_screen_id'), savedRoom = localStorage.getItem('tv_screen_room');
 
-  if (paramId && paramRoom) onTvPaired(paramId, paramRoom);
-  else if (savedId && savedRoom) onTvPaired(savedId, savedRoom);
-  else showPairingScreen();
+  if (paramId && paramRoom) {
+    onTvPaired(paramId, paramRoom);
+    return;
+  }
+  if (savedId && savedRoom) {
+    if (typeof checkDisplayExists === 'function') {
+      const exists = await checkDisplayExists(savedId, savedRoom);
+      if (exists) { onTvPaired(savedId, savedRoom); return; }
+    }
+  }
+  unpairThisTv();
 }
 
 function showPairingScreen() {
@@ -62,6 +68,9 @@ function onTvPaired(assignedId, roomId) {
 
 function unpairThisTv() {
   if (unpairListenerUnsub) { unpairListenerUnsub(); unpairListenerUnsub = null; }
+  if (screenId && currentRoomId && typeof unpairTv === 'function') {
+    unpairTv(screenId);
+  }
   localStorage.removeItem('tv_screen_id');
   localStorage.removeItem('tv_screen_room');
   screenId = null;
