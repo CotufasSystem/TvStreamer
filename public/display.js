@@ -87,7 +87,6 @@ function registerDisplay() {
 
 function hideAllMedia() {
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
-  if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
   if (imgEl) imgEl.style.display = 'none';
   if (videoEl) {
     videoEl.style.display = 'none';
@@ -165,13 +164,16 @@ async function renderMediaElement(data, fitClass, isMuted = false, customStyle =
   currentFitClass = fitClass;
 
   if (type === 'stream') {
-    hideAllMedia();
+    if (imgEl) imgEl.style.display = 'none';
+    if (frameEl) frameEl.style.display = 'none';
+    if (textEl) textEl.style.display = 'none';
     if (emptyEl) emptyEl.style.display = 'none';
     videoEl.style.display = 'block';
     videoEl.className = `media-elem ${fitClass}`;
     videoEl.muted = isMuted;
+
     const streamKey = targetKey || `screen_${screenId}`;
-    if (typeof listenTvWebRtcStream === 'function') {
+    if (!activeRtcStreamUnsub && typeof listenTvWebRtcStream === 'function') {
       activeRtcStreamUnsub = listenTvWebRtcStream(streamKey, currentRoomId, (mediaStream) => {
         videoEl.srcObject = mediaStream;
         videoEl.play().catch(() => { videoEl.muted = true; videoEl.play(); });
@@ -183,7 +185,9 @@ async function renderMediaElement(data, fitClass, isMuted = false, customStyle =
     return;
   }
 
+  if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
   hideAllMedia();
+
   if (type === 'image' && src) {
     let finalSrc = src;
     if (src.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') finalSrc = await loadVideoFromFirestore(src, currentRoomId);
