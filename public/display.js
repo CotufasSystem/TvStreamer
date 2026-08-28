@@ -1,12 +1,11 @@
 const socket = (typeof io === 'function') ? io() : { on: () => {}, emit: () => {} };
 let screenId = null, currentRoomId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentFitClass = 'fit-contain', currentlyPlayingSrc = null, activeBlobUrl = null;
-let unpairListenerUnsub = null, activeRtcStreamUnsub = null;
+let unpairListenerUnsub = null;
 
 const setupOverlay = document.getElementById('setup-overlay'), pinDisplayEl = document.getElementById('display-pin-code');
 const badgeEl = document.getElementById('tv-badge'), badgeIdEl = document.getElementById('badge-id'), emptyIdEl = document.getElementById('empty-id');
 const screenContainer = document.getElementById('screen-container'), imgEl = document.getElementById('display-image'), videoEl = document.getElementById('display-video');
-const streamCanvasEl = document.getElementById('display-stream-canvas'), frameEl = document.getElementById('display-frame'), textEl = document.getElementById('display-text'), emptyEl = document.getElementById('empty-state');
-const streamBufferImg = new Image();
+const frameEl = document.getElementById('display-frame'), textEl = document.getElementById('display-text'), emptyEl = document.getElementById('empty-state');
 
 function getDisplaySpecs() {
   const w = window.innerWidth || screen.width, h = window.innerHeight || screen.height, gcd = (a, b) => b === 0 ? a : gcd(b, a % b), d = gcd(w, h);
@@ -64,7 +63,6 @@ function onTvPaired(assignedId, roomId) {
 
 function unpairThisTv() {
   if (unpairListenerUnsub) { unpairListenerUnsub(); unpairListenerUnsub = null; }
-  if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
   if (screenId && currentRoomId && typeof unpairTv === 'function') unpairTv(screenId);
   localStorage.removeItem('tv_screen_id');
   localStorage.removeItem('tv_screen_room');
@@ -88,12 +86,9 @@ function registerDisplay() {
 
 function hideAllMedia() {
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
-  if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
-  if (imgEl) imgEl.style.display = 'none';
-  if (streamCanvasEl) streamCanvasEl.style.display = 'none';
+  if (imgEl) { imgEl.style.display = 'none'; imgEl.removeAttribute('src'); }
   if (videoEl) {
     videoEl.style.display = 'none';
-    if (videoEl.srcObject) { videoEl.srcObject.getTracks().forEach(t => t.stop()); videoEl.srcObject = null; }
     videoEl.removeAttribute('src');
     videoEl.src = '';
     try { videoEl.pause(); } catch (e) {}
@@ -165,43 +160,8 @@ function startSlideshow(items, intervalSeconds, fitClass) {
 }
 
 async function renderMediaElement(data, fitClass, isMuted = false, customStyle = {}) {
-  const { type, src, items, interval, text, targetKey } = data || {};
+  const { type, src, items, interval, text } = data || {};
   currentFitClass = fitClass;
-
-  if (type === 'stream') {
-    if (imgEl) imgEl.style.display = 'none';
-    if (videoEl) videoEl.style.display = 'none';
-    if (frameEl) frameEl.style.display = 'none';
-    if (textEl) textEl.style.display = 'none';
-
-    if (streamCanvasEl) {
-      streamCanvasEl.style.display = 'block';
-      streamCanvasEl.className = `media-elem ${fitClass}`;
-    }
-
-    const streamKey = targetKey || `screen_${screenId}`;
-    if (!activeRtcStreamUnsub && typeof listenTvWebRtcStream === 'function') {
-      activeRtcStreamUnsub = listenTvWebRtcStream(streamKey, currentRoomId, (frameData) => {
-        if (!frameData) return;
-        streamBufferImg.onload = () => {
-          if (!streamCanvasEl) return;
-          if (streamCanvasEl.width !== streamBufferImg.naturalWidth) streamCanvasEl.width = streamBufferImg.naturalWidth;
-          if (streamCanvasEl.height !== streamBufferImg.naturalHeight) streamCanvasEl.height = streamBufferImg.naturalHeight;
-          const ctx = streamCanvasEl.getContext('2d');
-          ctx.drawImage(streamBufferImg, 0, 0);
-          streamCanvasEl.style.display = 'block';
-          if (emptyEl) emptyEl.style.display = 'none';
-        };
-        streamBufferImg.src = frameData;
-      }, () => {
-        hideAllMedia();
-        if (emptyEl) emptyEl.style.display = 'flex';
-      });
-    }
-    return;
-  }
-
-  if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
   hideAllMedia();
 
   if (type === 'image' && src) {
@@ -237,7 +197,7 @@ function renderState(state) {
 
 function renderMirrorMode(mirrorConfig) {
   if (screenContainer) screenContainer.className = 'screen-container mode-mirror';
-  if (!mirrorConfig || mirrorConfig.type === 'empty' || (!mirrorConfig.src && !mirrorConfig.text && (!mirrorConfig.items || !mirrorConfig.items.length) && mirrorConfig.type !== 'stream')) {
+  if (!mirrorConfig || mirrorConfig.type === 'empty' || (!mirrorConfig.src && !mirrorConfig.text && (!mirrorConfig.items || !mirrorConfig.items.length))) {
     hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return;
   }
   if (emptyEl) emptyEl.style.display = 'none';
@@ -246,7 +206,7 @@ function renderMirrorMode(mirrorConfig) {
 
 function renderSplitMode(splitConfig) {
   if (screenContainer) screenContainer.className = 'screen-container mode-split';
-  if (!splitConfig || splitConfig.type === 'empty' || (!splitConfig.src && !splitConfig.text && splitConfig.type !== 'stream')) {
+  if (!splitConfig || splitConfig.type === 'empty' || (!splitConfig.src && !splitConfig.text)) {
     hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return;
   }
   const { rows, cols, layout, fit, muted } = splitConfig;
@@ -267,7 +227,7 @@ function renderSplitMode(splitConfig) {
 
 function renderIndividualMode(screenData) {
   if (screenContainer) screenContainer.className = 'screen-container mode-individual';
-  if (!screenData || screenData.type === 'empty' || (!screenData.src && !screenData.text && (!screenData.items || !screenData.items.length) && screenData.type !== 'stream')) {
+  if (!screenData || screenData.type === 'empty' || (!screenData.src && !screenData.text && (!screenData.items || !screenData.items.length))) {
     hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return;
   }
   if (emptyEl) emptyEl.style.display = 'none';

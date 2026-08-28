@@ -5,7 +5,6 @@ const defaultState = {
   screens: { 1: { type: 'empty', fit: 'contain' }, 2: { type: 'empty', fit: 'contain' }, 3: { type: 'empty', fit: 'contain' }, 4: { type: 'empty', fit: 'contain' }, 5: { type: 'empty', fit: 'contain' }, 6: { type: 'empty', fit: 'contain' }, 7: { type: 'empty', fit: 'contain' } }
 };
 let currentState = JSON.parse(JSON.stringify(defaultState)), currentDisplays = [], targetSlideshowScreenId = null, tempIndividualPlaylist = [], tempMirrorPlaylist = [];
-let activeStreamScreenId = null;
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => { regs.forEach(r => r.unregister()); });
 
@@ -54,7 +53,6 @@ function handleUnpairTv(screenId, e) {
   }
 }
 function getMediaPreviewHtml(src, type) {
-  if (type === 'stream') return '<div style="color:#10b981; font-weight:bold; padding:10px;">🔴 Transmitiendo Pantalla en Vivo</div>';
   if (!src) return '<span class="no-img-text">Sin contenido</span>';
   if (src.startsWith('tvvideo://') || src.startsWith('chunked://')) return '<div style="color:#38bdf8; font-weight:bold; padding:10px;">🎬 Video Cargado</div>';
   if (type === 'video' || src.startsWith('data:video')) return `<video src="${src}" muted autoplay loop></video>`;
@@ -63,7 +61,7 @@ function getMediaPreviewHtml(src, type) {
 function renderMirrorView() {
   const conf = currentState.mirrorConfig || {}, box = document.getElementById('mirror-preview-box'), content = document.getElementById('mirror-preview-content');
   if (!box || !content) return;
-  if (conf.type && conf.type !== 'empty' && (conf.src || conf.text || conf.type === 'stream' || (conf.items && conf.items.length))) {
+  if (conf.type && conf.type !== 'empty' && (conf.src || conf.text || (conf.items && conf.items.length))) {
     box.style.display = 'flex';
     if (conf.type === 'slideshow') content.innerHTML = `🎠 Playlist (${(conf.items || []).length} items, ${conf.interval || 5}s)`;
     else if (conf.type === 'url') content.innerHTML = `🌐 ${conf.src}`;
@@ -83,7 +81,7 @@ function renderSplitView() {
   }
   const box = document.getElementById('split-preview-box'), content = document.getElementById('split-preview-content');
   if (!box || !content) return;
-  if (conf.type && conf.type !== 'empty' && (conf.src || conf.text || conf.type === 'stream')) {
+  if (conf.type && conf.type !== 'empty' && (conf.src || conf.text)) {
     box.style.display = 'flex';
     if (conf.type === 'url') content.innerHTML = `🌐 ${conf.src}`;
     else if (conf.type === 'text') content.innerHTML = `📢 ${conf.text}`;
@@ -97,13 +95,11 @@ function renderIndividualView() {
     const data = (currentState.screens && currentState.screens[id]) ? currentState.screens[id] : { type: 'empty', fit: 'contain' };
     const card = document.createElement('div'); card.className = 'screen-card';
     let previewHtml = `<span class="no-img-text">Sin contenido</span>`;
-    if (data.type === 'stream') previewHtml = `<span style="font-weight:bold;color:#10b981;padding:8px;">🔴 Pantalla en Vivo</span>`;
-    else if (data.type === 'slideshow') previewHtml = `<span style="font-weight:bold;color:#38bdf8;padding:8px;">🎠 Playlist (${(data.items || []).length} items / ${data.interval || 5}s)</span>`;
+    if (data.type === 'slideshow') previewHtml = `<span style="font-weight:bold;color:#38bdf8;padding:8px;">🎠 Playlist (${(data.items || []).length} items / ${data.interval || 5}s)</span>`;
     else if (data.type === 'url') previewHtml = `<span class="no-img-text">🌐 ${data.src}</span>`;
     else if (data.type === 'text') previewHtml = `<span style="font-weight:bold;color:#fbbf24;padding:8px;">${data.text}</span>`;
     else if (data.type && data.type !== 'empty') previewHtml = getMediaPreviewHtml(data.src, data.type);
 
-    const isStreaming = data.type === 'stream';
     card.innerHTML = `
       <div class="screen-card-header"><span class="screen-title">Pantalla ${id}</span>
         <select onchange="changeScreenFit(${id}, this.value)">
@@ -114,7 +110,6 @@ function renderIndividualView() {
       </div>
       <div class="screen-preview-box">${previewHtml}</div>
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
-        <button class="btn ${isStreaming ? 'btn-danger' : 'btn-primary'}" style="flex:100%;" onclick="toggleScreenShare(${id})">${isStreaming ? '🛑 Detener Transmisión' : '📡 Transmitir Pantalla en Vivo'}</button>
         <input type="file" id="file-screen-${id}" accept="image/*,video/*" style="display:none" onchange="uploadScreenMedia(${id}, this)">
         <button id="btn-file-${id}" class="btn btn-outline" style="flex:1" onclick="document.getElementById('file-screen-${id}').click()">🎬 Archivo</button>
         <button class="btn btn-outline" onclick="openSlideshowModal(${id})">🎠 Playlist [+]</button>
@@ -125,29 +120,6 @@ function renderIndividualView() {
     container.appendChild(card);
   }
 }
-
-async function toggleScreenShare(screenId) {
-  const targetKey = `screen_${screenId}`;
-  if (activeStreamScreenId === screenId) {
-    if (typeof stopAdminScreenShare === 'function') stopAdminScreenShare(targetKey);
-    activeStreamScreenId = null;
-    currentState.screens[screenId] = { type: 'empty', fit: 'contain' };
-    renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-    return;
-  }
-  if (typeof startAdminScreenShare === 'function') {
-    const s = await startAdminScreenShare(targetKey, () => {
-      activeStreamScreenId = screenId;
-      currentState.screens[screenId] = { type: 'stream', targetKey, fit: 'contain' };
-      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-    }, () => {
-      activeStreamScreenId = null;
-      currentState.screens[screenId] = { type: 'empty', fit: 'contain' };
-      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-    });
-  }
-}
-
 async function uploadMedia(file, targetKey = 'screen_1', onProgress = () => {}) {
   if (typeof uploadMediaFile === 'function') return await uploadMediaFile(file, targetKey, onProgress);
   const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name || '');
@@ -206,7 +178,6 @@ function changeScreenFit(screenId, fit) {
   if (currentState.screens[screenId]) { currentState.screens[screenId].fit = fit; if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
 function clearScreenMedia(screenId) {
-  if (activeStreamScreenId === screenId && typeof stopAdminScreenShare === 'function') stopAdminScreenShare(`screen_${screenId}`);
   if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore(`screen_${screenId}`);
   if (currentState.screens[screenId]) { currentState.screens[screenId] = { type: 'empty', src: null, text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
