@@ -20,21 +20,25 @@ function renderUI() {
 }
 function switchMode(mode) { currentState.mode = mode; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 function resetMyRoom() {
-  if (confirm('¿Crear una nueva sala privada limpia? (Las TVs actuales deberán vincularse con su nuevo PIN)')) {
-    localStorage.removeItem('tv_admin_room_id');
-    window.location.reload();
+  const n = prompt('Ingresa el nombre o código de sala a usar (o deja vacío para generar una nueva):');
+  if (n !== null) {
+    if (n.trim()) setAdminRoomId(n);
+    else { localStorage.removeItem('tv_admin_room_id'); window.location.reload(); }
   }
 }
 function renderDisplaysStatus() {
   const container = document.getElementById('displays-status-container'); if (!container) return;
-  const displayMap = new Map(); currentDisplays.forEach(d => { if (d && d.screenId) displayMap.set(d.screenId, d); });
-  container.innerHTML = '';
   const myRoom = (typeof getAdminRoomId === 'function') ? getAdminRoomId() : '';
+  const displayMap = new Map();
+  currentDisplays.forEach(d => { if (d && d.screenId && d.roomId === myRoom) displayMap.set(d.screenId, d); });
+  container.innerHTML = '';
   const roomBadge = document.getElementById('header-room-badge');
-  if (roomBadge && myRoom) roomBadge.textContent = `🔒 Sala: ${myRoom.replace('room_', '#')}`;
+  if (roomBadge && myRoom) roomBadge.textContent = `🔒 Sala: ${myRoom.replace('sala_', '#')}`;
 
   for (let id = 1; id <= 7; id++) {
-    const disp = displayMap.get(id), isOnline = disp ? (disp.online !== undefined ? disp.online : true) : false, specs = disp && disp.specs ? disp.specs : null;
+    const disp = displayMap.get(id);
+    const isOnline = Boolean(disp && disp.online === true && disp.roomId === myRoom);
+    const specs = disp && disp.specs ? disp.specs : null;
     const chip = document.createElement('a'); chip.className = 'status-chip'; chip.href = `/display.html?id=${id}&room=${myRoom}`; chip.target = '_blank';
     let specHtml = isOnline ? (specs ? `${specs.resLabel} (${specs.aspect})` : 'Conectada 🟢') : 'Sin vincular ⚪';
     chip.innerHTML = `<div class="status-chip-header"><span>📺 TV ${id}</span><div style="display:flex; align-items:center; gap:6px;"><span class="chip-status-dot ${isOnline ? 'online' : ''}"></span>${isOnline ? `<button class="thumb-remove-btn" style="position:static; width:16px; height:16px;" onclick="handleUnpairTv(${id}, event)">✕</button>` : ''}</div></div><span class="spec-tag">${specHtml}</span>`;

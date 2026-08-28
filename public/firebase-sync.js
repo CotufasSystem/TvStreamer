@@ -24,11 +24,18 @@ getDb();
 
 function getAdminRoomId() {
   let r = localStorage.getItem('tv_admin_room_id');
-  if (!r) {
+  if (!r || r === 'default' || r === 'room_default') {
     r = 'sala_' + Math.floor(1000 + Math.random() * 9000);
     localStorage.setItem('tv_admin_room_id', r);
   }
   return r;
+}
+
+function setAdminRoomId(newRoom) {
+  if (!newRoom) return;
+  const clean = newRoom.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  localStorage.setItem('tv_admin_room_id', clean);
+  window.location.reload();
 }
 
 function compressImage(file, maxDimension = 960, quality = 0.65) {
@@ -55,7 +62,7 @@ function compressImage(file, maxDimension = 960, quality = 0.65) {
   });
 }
 
-// 1. PIN EN TV (AISLADO POR PIN DOC)
+// 1. PIN EN TV
 function listenTvPinPairing(pin, onPairedCallback) {
   const fdb = getDb(); if (!fdb || !pin) return;
   const cleanPin = pin.toString().trim().replace(/\D/g, '');
@@ -223,7 +230,7 @@ async function uploadMediaFile(file, targetKey = 'screen_1', onProgress = () => 
 function reportFirebaseSpecs(screenId, specs, roomId) {
   const fdb = getDb(); if (!fdb || !screenId || !roomId) return;
   fdb.collection('rooms').doc(roomId).collection('displays').doc(screenId.toString()).set({
-    screenId: parseInt(screenId, 10), specs, online: true, lastSeen: Date.now()
+    screenId: parseInt(screenId, 10), specs, roomId, online: true, lastSeen: Date.now()
   }, { merge: true }).catch(() => {});
 }
 
@@ -231,7 +238,10 @@ function listenFirebaseDisplays(roomId, callback) {
   const fdb = getDb(); if (!fdb || !roomId) return;
   fdb.collection('rooms').doc(roomId).collection('displays').onSnapshot((snap) => {
     const list = [];
-    snap.forEach((doc) => list.push(doc.data()));
+    snap.forEach((doc) => {
+      const data = doc.data();
+      if (data && data.roomId === roomId) list.push(data);
+    });
     callback(list);
   }, () => {});
 }
