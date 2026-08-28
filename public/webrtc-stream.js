@@ -26,8 +26,15 @@ async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {
     hiddenVideoEl.autoplay = true;
     hiddenVideoEl.muted = true;
     hiddenVideoEl.playsInline = true;
+    hiddenVideoEl.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.01;pointer-events:none;left:-9999px;top:-9999px;';
+    document.body.appendChild(hiddenVideoEl);
   }
   hiddenVideoEl.srcObject = localScreenStream;
+
+  await new Promise((res) => {
+    hiddenVideoEl.onloadedmetadata = () => { hiddenVideoEl.play().catch(() => {}); res(); };
+    setTimeout(res, 500);
+  });
   await hiddenVideoEl.play().catch(() => {});
 
   if (!hiddenCanvasEl) hiddenCanvasEl = document.createElement('canvas');
@@ -38,13 +45,15 @@ async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {
 
   let isSending = false;
   streamIntervalId = setInterval(async () => {
-    if (isSending || !localScreenStream || hiddenVideoEl.videoWidth === 0) return;
-    isSending = true;
+    if (isSending || !localScreenStream) return;
+    const vW = hiddenVideoEl.videoWidth || 854;
+    const vH = hiddenVideoEl.videoHeight || 480;
+    if (vW === 0 || vH === 0) return;
 
+    isSending = true;
     try {
-      const maxW = 854;
-      let w = hiddenVideoEl.videoWidth || 1280;
-      let h = hiddenVideoEl.videoHeight || 720;
+      const maxW = 720;
+      let w = vW, h = vH;
       if (w > maxW) {
         h = Math.round((h * maxW) / w);
         w = maxW;
@@ -53,7 +62,7 @@ async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {
       hiddenCanvasEl.height = h;
 
       ctx.drawImage(hiddenVideoEl, 0, 0, w, h);
-      const frameData = hiddenCanvasEl.toDataURL('image/jpeg', 0.55);
+      const frameData = hiddenCanvasEl.toDataURL('image/jpeg', 0.50);
 
       await streamDoc.set({
         frame: frameData,
@@ -65,7 +74,7 @@ async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {
     } finally {
       isSending = false;
     }
-  }, 100); // ~10 FPS ultra-smooth real-time
+  }, 120); // ~8-10 FPS real-time
 
   localScreenStream.getVideoTracks()[0].onended = () => {
     stopAdminScreenShare(targetKey);
