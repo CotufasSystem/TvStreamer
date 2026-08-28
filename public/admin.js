@@ -5,6 +5,7 @@ const defaultState = {
   screens: { 1: { type: 'empty', fit: 'contain' }, 2: { type: 'empty', fit: 'contain' }, 3: { type: 'empty', fit: 'contain' }, 4: { type: 'empty', fit: 'contain' }, 5: { type: 'empty', fit: 'contain' }, 6: { type: 'empty', fit: 'contain' }, 7: { type: 'empty', fit: 'contain' } }
 };
 let currentState = JSON.parse(JSON.stringify(defaultState)), currentDisplays = [], targetSlideshowScreenId = null, tempIndividualPlaylist = [], tempMirrorPlaylist = [];
+let activeStreamScreenId = null;
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => { regs.forEach(r => r.unregister()); });
 
@@ -53,6 +54,7 @@ function handleUnpairTv(screenId, e) {
   }
 }
 function getMediaPreviewHtml(src, type) {
+  if (type === 'stream') return '<div style="color:#10b981; font-weight:bold; padding:10px;">🔴 Transmitiendo Pantalla en Vivo</div>';
   if (!src) return '<span class="no-img-text">Sin contenido</span>';
   if (src.startsWith('tvvideo://') || src.startsWith('chunked://')) return '<div style="color:#38bdf8; font-weight:bold; padding:10px;">🎬 Video Cargado</div>';
   if (type === 'video' || src.startsWith('data:video')) return `<video src="${src}" muted autoplay loop></video>`;
@@ -61,7 +63,7 @@ function getMediaPreviewHtml(src, type) {
 function renderMirrorView() {
   const conf = currentState.mirrorConfig || {}, box = document.getElementById('mirror-preview-box'), content = document.getElementById('mirror-preview-content');
   if (!box || !content) return;
-  if (conf.type && conf.type !== 'empty' && (conf.src || conf.text || (conf.items && conf.items.length))) {
+  if (conf.type && conf.type !== 'empty' && (conf.src || conf.text || conf.type === 'stream' || (conf.items && conf.items.length))) {
     box.style.display = 'flex';
     if (conf.type === 'slideshow') content.innerHTML = `🎠 Playlist (${(conf.items || []).length} items, ${conf.interval || 5}s)`;
     else if (conf.type === 'url') content.innerHTML = `🌐 ${conf.src}`;
@@ -81,7 +83,7 @@ function renderSplitView() {
   }
   const box = document.getElementById('split-preview-box'), content = document.getElementById('split-preview-content');
   if (!box || !content) return;
-  if (conf.type && conf.type !== 'empty' && (conf.src || conf.text)) {
+  if (conf.type && conf.type !== 'empty' && (conf.src || conf.text || conf.type === 'stream')) {
     box.style.display = 'flex';
     if (conf.type === 'url') content.innerHTML = `🌐 ${conf.src}`;
     else if (conf.type === 'text') content.innerHTML = `📢 ${conf.text}`;
@@ -95,11 +97,13 @@ function renderIndividualView() {
     const data = (currentState.screens && currentState.screens[id]) ? currentState.screens[id] : { type: 'empty', fit: 'contain' };
     const card = document.createElement('div'); card.className = 'screen-card';
     let previewHtml = `<span class="no-img-text">Sin contenido</span>`;
-    if (data.type === 'slideshow') previewHtml = `<span style="font-weight:bold;color:#38bdf8;padding:8px;">🎠 Playlist (${(data.items || []).length} items / ${data.interval || 5}s)</span>`;
+    if (data.type === 'stream') previewHtml = `<span style="font-weight:bold;color:#10b981;padding:8px;">🔴 Pantalla en Vivo</span>`;
+    else if (data.type === 'slideshow') previewHtml = `<span style="font-weight:bold;color:#38bdf8;padding:8px;">🎠 Playlist (${(data.items || []).length} items / ${data.interval || 5}s)</span>`;
     else if (data.type === 'url') previewHtml = `<span class="no-img-text">🌐 ${data.src}</span>`;
     else if (data.type === 'text') previewHtml = `<span style="font-weight:bold;color:#fbbf24;padding:8px;">${data.text}</span>`;
     else if (data.type && data.type !== 'empty') previewHtml = getMediaPreviewHtml(data.src, data.type);
 
+    const isStreaming = data.type === 'stream';
     card.innerHTML = `
       <div class="screen-card-header"><span class="screen-title">Pantalla ${id}</span>
         <select onchange="changeScreenFit(${id}, this.value)">
@@ -110,9 +114,10 @@ function renderIndividualView() {
       </div>
       <div class="screen-preview-box">${previewHtml}</div>
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn ${isStreaming ? 'btn-danger' : 'btn-primary'}" style="flex:100%;" onclick="toggleScreenShare(${id})">${isStreaming ? '🛑 Detener Transmisión' : '📡 Transmitir Pantalla en Vivo'}</button>
         <input type="file" id="file-screen-${id}" accept="image/*,video/*" style="display:none" onchange="uploadScreenMedia(${id}, this)">
         <button id="btn-file-${id}" class="btn btn-outline" style="flex:1" onclick="document.getElementById('file-screen-${id}').click()">🎬 Archivo</button>
-        <button class="btn btn-outline" onclick="openPairModal(${id})">🎠 Playlist [+]</button>
+        <button class="btn btn-outline" onclick="openSlideshowModal(${id})">🎠 Playlist [+]</button>
         <button class="btn btn-outline" onclick="promptScreenUrl(${id})">🌐 URL</button>
         <button class="btn btn-outline" onclick="promptScreenText(${id})">📢 Texto</button>
         ${data.type && data.type !== 'empty' ? `<button class="btn-remove" onclick="clearScreenMedia(${id})">🗑</button>` : ''}
@@ -120,6 +125,29 @@ function renderIndividualView() {
     container.appendChild(card);
   }
 }
+
+async function toggleScreenShare(screenId) {
+  const targetKey = `screen_${screenId}`;
+  if (activeStreamScreenId === screenId) {
+    if (typeof stopAdminScreenShare === 'function') stopAdminScreenShare(targetKey);
+    activeStreamScreenId = null;
+    currentState.screens[screenId] = { type: 'empty', fit: 'contain' };
+    renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    return;
+  }
+  if (typeof startAdminScreenShare === 'function') {
+    const s = await startAdminScreenShare(targetKey, () => {
+      activeStreamScreenId = screenId;
+      currentState.screens[screenId] = { type: 'stream', targetKey, fit: 'contain' };
+      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    }, () => {
+      activeStreamScreenId = null;
+      currentState.screens[screenId] = { type: 'empty', fit: 'contain' };
+      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    });
+  }
+}
+
 async function uploadMedia(file, targetKey = 'screen_1', onProgress = () => {}) {
   if (typeof uploadMediaFile === 'function') return await uploadMediaFile(file, targetKey, onProgress);
   const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name || '');
@@ -166,92 +194,6 @@ function submitIndividualSlideshow() {
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
   closeSlideshowModal();
 }
-async function handleAppendMirrorFiles(input) {
-  if (!input.files || input.files.length === 0) return;
-  for (const f of input.files) { const { url } = await uploadMedia(f, 'mirror'); tempMirrorPlaylist.push(url); }
-  input.value = ''; renderThumbnailGrid('mirror-playlist-grid', 'mirror-playlist-count', tempMirrorPlaylist, 'removeMirrorPlaylistItem');
-}
-function removeMirrorPlaylistItem(idx) {
-  tempMirrorPlaylist.splice(idx, 1);
-  renderThumbnailGrid('mirror-playlist-grid', 'mirror-playlist-count', tempMirrorPlaylist, 'removeMirrorPlaylistItem');
-}
-function sendMirrorSlideshow() {
-  if (tempMirrorPlaylist.length === 0) return alert('Agrega fotos o videos');
-  const inEl = document.getElementById('mirror-interval-input'), interval = parseInt(inEl ? inEl.value : '5', 10) || 5;
-  currentState.mirrorConfig = { type: 'slideshow', items: tempMirrorPlaylist, interval, fit: 'contain' };
-  renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-}
-function setMirrorTab(type) {
-  document.querySelectorAll('#view-mirror .subtab-btn').forEach(b => b.classList.remove('active'));
-  if (event && event.target) event.target.classList.add('active');
-  const pF = document.getElementById('mirror-panel-file'), pS = document.getElementById('mirror-panel-slideshow'), pU = document.getElementById('mirror-panel-url'), pT = document.getElementById('mirror-panel-text');
-  if (pF) pF.style.display = type === 'file' ? 'block' : 'none';
-  if (pS) pS.style.display = type === 'slideshow' ? 'block' : 'none';
-  if (pU) pU.style.display = type === 'url' ? 'block' : 'none';
-  if (pT) pT.style.display = type === 'text' ? 'block' : 'none';
-}
-async function handleMirrorFileUpload(input) {
-  if (input.files.length > 0) {
-    const btn = document.getElementById('btn-mirror-file'); if (btn) btn.textContent = '⏳ Subiendo...';
-    try {
-      const { url, type } = await uploadMedia(input.files[0], 'mirror', (p) => { if (btn) btn.textContent = `⏳ ${p}%...`; });
-      currentState.mirrorConfig = { type, src: url, fit: 'contain' };
-      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-    } catch (e) { alert('Error subiendo: ' + e.message); }
-    finally { if (btn) btn.textContent = 'Subir Archivo'; input.value = ''; }
-  }
-}
-function sendMirrorUrl() {
-  const inEl = document.getElementById('mirror-url-input'), s = inEl ? inEl.value.trim() : '';
-  if (s) { currentState.mirrorConfig = { type: 'url', src: s, fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
-}
-function sendMirrorText() {
-  const inEl = document.getElementById('mirror-text-input'), t = inEl ? inEl.value.trim() : '';
-  if (t) { currentState.mirrorConfig = { type: 'text', text: t, fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
-}
-function clearMirrorMedia() {
-  if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore('mirror');
-  currentState.mirrorConfig = { type: 'empty', src: null, items: [], text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
-async function handleSplitFileUpload(input) {
-  if (input.files.length > 0) {
-    const { url, type } = await uploadMedia(input.files[0], 'split');
-    currentState.splitConfig.type = type; currentState.splitConfig.src = url;
-    renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-    input.value = '';
-  }
-}
-function clearSplitMedia() {
-  if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore('split');
-  currentState.splitConfig.type = 'empty'; currentState.splitConfig.src = null; currentState.splitConfig.text = '';
-  renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-}
-function applySplitPreset() {
-  const pEl = document.getElementById('split-layout-preset'), p = pEl ? pEl.value : '1x7';
-  let rows = 1, cols = 7, layout = [[1, 2, 3, 4, 5, 6, 7]];
-  if (p === '7x1') { rows = 7; cols = 1; layout = [[1], [2], [3], [4], [5], [6], [7]]; }
-  else if (p === '2x4') { rows = 2; cols = 4; layout = [[1, 2, 3, 4], [5, 6, 7, null]]; }
-  currentState.splitConfig.rows = rows; currentState.splitConfig.cols = cols; currentState.splitConfig.layout = layout;
-  renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-}
-function updateSplitConfig() {
-  const fitEl = document.getElementById('split-fit');
-  currentState.splitConfig.fit = fitEl ? fitEl.value : 'cover';
-  renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-}
-async function uploadScreenMedia(screenId, input) {
-  if (input.files.length > 0) {
-    const btn = document.getElementById(`btn-file-${screenId}`);
-    if (btn) { btn.textContent = '⏳ 0%...'; btn.disabled = true; }
-    try {
-      const { url, type } = await uploadMedia(input.files[0], `screen_${screenId}`, (percent) => {
-        if (btn) btn.textContent = `⏳ ${percent}%...`;
-      });
-      currentState.screens[screenId] = { type, src: url, fit: 'contain' };
-      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-    } catch (err) { alert('Error al subir: ' + err.message); }
-    finally { if (btn) { btn.textContent = '🎬 Archivo'; btn.disabled = false; } input.value = ''; }
-  }
-}
 function promptScreenUrl(screenId) {
   const u = prompt('URL:');
   if (u) { currentState.screens[screenId] = { type: 'url', src: u.trim(), fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
@@ -264,6 +206,7 @@ function changeScreenFit(screenId, fit) {
   if (currentState.screens[screenId]) { currentState.screens[screenId].fit = fit; if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
 function clearScreenMedia(screenId) {
+  if (activeStreamScreenId === screenId && typeof stopAdminScreenShare === 'function') stopAdminScreenShare(`screen_${screenId}`);
   if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore(`screen_${screenId}`);
   if (currentState.screens[screenId]) { currentState.screens[screenId] = { type: 'empty', src: null, text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
@@ -291,6 +234,20 @@ async function submitPairPin() {
     }
   } catch (err) { alert('Error: ' + (err.message || 'Fallo')); }
   finally { if (btn) { btn.textContent = 'Vincular Ahora'; btn.disabled = false; } }
+}
+async function uploadScreenMedia(screenId, input) {
+  if (input.files.length > 0) {
+    const btn = document.getElementById(`btn-file-${screenId}`);
+    if (btn) { btn.textContent = '⏳ 0%...'; btn.disabled = true; }
+    try {
+      const { url, type } = await uploadMedia(input.files[0], `screen_${screenId}`, (percent) => {
+        if (btn) btn.textContent = `⏳ ${percent}%...`;
+      });
+      currentState.screens[screenId] = { type, src: url, fit: 'contain' };
+      renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
+    } catch (err) { alert('Error al subir: ' + err.message); }
+    finally { if (btn) { btn.textContent = '🎬 Archivo'; btn.disabled = false; } input.value = ''; }
+  }
 }
 const myActiveRoom = (typeof getAdminRoomId === 'function') ? getAdminRoomId() : null;
 if (typeof listenFirebaseDisplays === 'function' && myActiveRoom) listenFirebaseDisplays(myActiveRoom, (d) => { if (d) { currentDisplays = d; renderDisplaysStatus(); } });

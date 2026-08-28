@@ -1,6 +1,6 @@
 const socket = (typeof io === 'function') ? io() : { on: () => {}, emit: () => {} };
 let screenId = null, currentRoomId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentFitClass = 'fit-contain', currentlyPlayingSrc = null, activeBlobUrl = null;
-let unpairListenerUnsub = null;
+let unpairListenerUnsub = null, activeRtcStreamUnsub = null;
 
 const setupOverlay = document.getElementById('setup-overlay'), pinDisplayEl = document.getElementById('display-pin-code');
 const badgeEl = document.getElementById('tv-badge'), badgeIdEl = document.getElementById('badge-id'), emptyIdEl = document.getElementById('empty-id');
@@ -17,15 +17,10 @@ async function initDisplay() {
   const paramId = urlParams.get('id'), paramRoom = urlParams.get('room');
   const savedId = localStorage.getItem('tv_screen_id'), savedRoom = localStorage.getItem('tv_screen_room');
 
-  if (paramId && paramRoom) {
-    onTvPaired(paramId, paramRoom);
-    return;
-  }
-  if (savedId && savedRoom) {
-    if (typeof checkDisplayExists === 'function') {
-      const exists = await checkDisplayExists(savedId, savedRoom);
-      if (exists) { onTvPaired(savedId, savedRoom); return; }
-    }
+  if (paramId && paramRoom) { onTvPaired(paramId, paramRoom); return; }
+  if (savedId && savedRoom && typeof checkDisplayExists === 'function') {
+    const exists = await checkDisplayExists(savedId, savedRoom);
+    if (exists) { onTvPaired(savedId, savedRoom); return; }
   }
   unpairThisTv();
 }
@@ -39,9 +34,7 @@ function showPairingScreen() {
   currentPin = Math.floor(100000 + Math.random() * 900000).toString();
   if (pinDisplayEl) pinDisplayEl.textContent = `${currentPin.slice(0, 3)} - ${currentPin.slice(3)}`;
   if (typeof listenTvPinPairing === 'function') {
-    listenTvPinPairing(currentPin, (assignedId, roomId) => {
-      onTvPaired(assignedId, roomId);
-    });
+    listenTvPinPairing(currentPin, (assignedId, roomId) => { onTvPaired(assignedId, roomId); });
   }
 }
 
@@ -60,23 +53,18 @@ function onTvPaired(assignedId, roomId) {
   registerDisplay();
   if (typeof listenDisplayActive === 'function') {
     if (unpairListenerUnsub) { unpairListenerUnsub(); unpairListenerUnsub = null; }
-    unpairListenerUnsub = listenDisplayActive(screenId, currentRoomId, () => {
-      unpairThisTv();
-    });
+    unpairListenerUnsub = listenDisplayActive(screenId, currentRoomId, () => unpairThisTv());
   }
 
   if (typeof listenFirebaseState === 'function') {
-    listenFirebaseState(currentRoomId, (state) => {
-      if (state) renderState(state);
-    });
+    listenFirebaseState(currentRoomId, (state) => { if (state) renderState(state); });
   }
 }
 
 function unpairThisTv() {
   if (unpairListenerUnsub) { unpairListenerUnsub(); unpairListenerUnsub = null; }
-  if (screenId && currentRoomId && typeof unpairTv === 'function') {
-    unpairTv(screenId);
-  }
+  if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
+  if (screenId && currentRoomId && typeof unpairTv === 'function') unpairTv(screenId);
   localStorage.removeItem('tv_screen_id');
   localStorage.removeItem('tv_screen_room');
   screenId = null;
@@ -87,10 +75,7 @@ function unpairThisTv() {
 }
 
 function cleanActiveLocalBlob() {
-  if (activeBlobUrl) {
-    try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
-    activeBlobUrl = null;
-  }
+  if (activeBlobUrl) { try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {} activeBlobUrl = null; }
 }
 
 function registerDisplay() {
@@ -102,8 +87,13 @@ function registerDisplay() {
 
 function hideAllMedia() {
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+  if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
   if (imgEl) imgEl.style.display = 'none';
-  if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
+  if (videoEl) {
+    videoEl.style.display = 'none';
+    if (videoEl.srcObject) { videoEl.srcObject.getTracks().forEach(t => t.stop()); videoEl.srcObject = null; }
+    try { videoEl.pause(); } catch (e) {}
+  }
   if (frameEl) frameEl.style.display = 'none';
   if (textEl) { textEl.style.display = 'none'; textEl.textContent = ''; }
   currentlyPlayingSrc = null;
@@ -124,7 +114,6 @@ async function playVideoWithAudio(src, isLoop = true) {
     finalSrc = await loadVideoFromFirestore(src, currentRoomId);
     activeBlobUrl = finalSrc;
   }
-
   if (!finalSrc) return;
   currentlyPlayingSrc = src;
 
@@ -136,18 +125,12 @@ async function playVideoWithAudio(src, isLoop = true) {
   videoEl.loop = isLoop;
   videoEl.volume = 1.0;
   videoEl.muted = false;
-
   videoEl.src = finalSrc;
   videoEl.load();
 
   const p = videoEl.play();
   if (p !== undefined) {
-    p.catch(() => {
-      videoEl.muted = true;
-      videoEl.play().then(() => {
-        setTimeout(() => { videoEl.muted = false; }, 300);
-      }).catch(() => {});
-    });
+    p.catch(() => { videoEl.muted = true; videoEl.play().then(() => { setTimeout(() => { videoEl.muted = false; }, 300); }).catch(() => {}); });
   }
 }
 
@@ -155,21 +138,14 @@ async function showNextSlide() {
   if (!currentPlaylist || currentPlaylist.length === 0) return;
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
   const url = currentPlaylist[currentSlideIndex];
-  const isVideo = isVideoUrl(url);
-
-  if (isVideo) {
+  if (isVideoUrl(url)) {
     if (imgEl) imgEl.style.display = 'none';
     await playVideoWithAudio(url, false);
-    videoEl.onended = () => {
-      currentSlideIndex = (currentSlideIndex + 1) % currentPlaylist.length;
-      showNextSlide();
-    };
+    videoEl.onended = () => { currentSlideIndex = (currentSlideIndex + 1) % currentPlaylist.length; showNextSlide(); };
   } else {
     if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
     let finalImg = url;
-    if (url.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') {
-      finalImg = await loadVideoFromFirestore(url, currentRoomId);
-    }
+    if (url.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') finalImg = await loadVideoFromFirestore(url, currentRoomId);
     if (imgEl) {
       imgEl.style.display = 'block'; imgEl.className = `media-elem ${currentFitClass}`;
       if (imgEl.src !== finalImg) imgEl.src = finalImg;
@@ -181,18 +157,33 @@ async function showNextSlide() {
 }
 
 function startSlideshow(items, intervalSeconds, fitClass) {
-  currentPlaylist = items || [];
-  currentInterval = intervalSeconds || 5;
-  currentFitClass = fitClass;
-  currentSlideIndex = 0;
-  showNextSlide();
+  currentPlaylist = items || []; currentInterval = intervalSeconds || 5; currentFitClass = fitClass; currentSlideIndex = 0; showNextSlide();
 }
 
 async function renderMediaElement(data, fitClass, isMuted = false, customStyle = {}) {
-  const { type, src, items, interval, text } = data || {};
+  const { type, src, items, interval, text, targetKey } = data || {};
   currentFitClass = fitClass;
-  hideAllMedia();
 
+  if (type === 'stream') {
+    hideAllMedia();
+    if (emptyEl) emptyEl.style.display = 'none';
+    videoEl.style.display = 'block';
+    videoEl.className = `media-elem ${fitClass}`;
+    videoEl.muted = isMuted;
+    const streamKey = targetKey || `screen_${screenId}`;
+    if (typeof listenTvWebRtcStream === 'function') {
+      activeRtcStreamUnsub = listenTvWebRtcStream(streamKey, currentRoomId, (mediaStream) => {
+        videoEl.srcObject = mediaStream;
+        videoEl.play().catch(() => { videoEl.muted = true; videoEl.play(); });
+      }, () => {
+        hideAllMedia();
+        if (emptyEl) emptyEl.style.display = 'flex';
+      });
+    }
+    return;
+  }
+
+  hideAllMedia();
   if (type === 'image' && src) {
     let finalSrc = src;
     if (src.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') finalSrc = await loadVideoFromFirestore(src, currentRoomId);
@@ -226,9 +217,8 @@ function renderState(state) {
 
 function renderMirrorMode(mirrorConfig) {
   if (screenContainer) screenContainer.className = 'screen-container mode-mirror';
-  if (!mirrorConfig || mirrorConfig.type === 'empty' || (!mirrorConfig.src && !mirrorConfig.text && (!mirrorConfig.items || !mirrorConfig.items.length))) {
-    hideAllMedia();
-    if (emptyEl) emptyEl.style.display = 'flex'; return;
+  if (!mirrorConfig || mirrorConfig.type === 'empty' || (!mirrorConfig.src && !mirrorConfig.text && (!mirrorConfig.items || !mirrorConfig.items.length) && mirrorConfig.type !== 'stream')) {
+    hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return;
   }
   if (emptyEl) emptyEl.style.display = 'none';
   renderMediaElement(mirrorConfig, `fit-${mirrorConfig.fit || 'contain'}`, mirrorConfig.muted || false, { width: '100vw', height: '100vh', transform: 'none' });
@@ -236,7 +226,9 @@ function renderMirrorMode(mirrorConfig) {
 
 function renderSplitMode(splitConfig) {
   if (screenContainer) screenContainer.className = 'screen-container mode-split';
-  if (!splitConfig || splitConfig.type === 'empty' || (!splitConfig.src && !splitConfig.text)) { hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return; }
+  if (!splitConfig || splitConfig.type === 'empty' || (!splitConfig.src && !splitConfig.text && splitConfig.type !== 'stream')) {
+    hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return;
+  }
   const { rows, cols, layout, fit, muted } = splitConfig;
   let targetRow = -1, targetCol = -1;
   for (let r = 0; r < (layout || []).length; r++) {
@@ -255,9 +247,8 @@ function renderSplitMode(splitConfig) {
 
 function renderIndividualMode(screenData) {
   if (screenContainer) screenContainer.className = 'screen-container mode-individual';
-  if (!screenData || screenData.type === 'empty' || (!screenData.src && !screenData.text && (!screenData.items || !screenData.items.length))) {
-    hideAllMedia();
-    if (emptyEl) emptyEl.style.display = 'flex'; return;
+  if (!screenData || screenData.type === 'empty' || (!screenData.src && !screenData.text && (!screenData.items || !screenData.items.length) && screenData.type !== 'stream')) {
+    hideAllMedia(); if (emptyEl) emptyEl.style.display = 'flex'; return;
   }
   if (emptyEl) emptyEl.style.display = 'none';
   renderMediaElement(screenData, `fit-${screenData.fit || 'contain'}`, screenData.muted || false, { width: '100vw', height: '100vh', transform: 'none' });
