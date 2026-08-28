@@ -5,7 +5,8 @@ let unpairListenerUnsub = null, activeRtcStreamUnsub = null;
 const setupOverlay = document.getElementById('setup-overlay'), pinDisplayEl = document.getElementById('display-pin-code');
 const badgeEl = document.getElementById('tv-badge'), badgeIdEl = document.getElementById('badge-id'), emptyIdEl = document.getElementById('empty-id');
 const screenContainer = document.getElementById('screen-container'), imgEl = document.getElementById('display-image'), videoEl = document.getElementById('display-video');
-const frameEl = document.getElementById('display-frame'), textEl = document.getElementById('display-text'), emptyEl = document.getElementById('empty-state');
+const streamCanvasEl = document.getElementById('display-stream-canvas'), frameEl = document.getElementById('display-frame'), textEl = document.getElementById('display-text'), emptyEl = document.getElementById('empty-state');
+const streamBufferImg = new Image();
 
 function getDisplaySpecs() {
   const w = window.innerWidth || screen.width, h = window.innerHeight || screen.height, gcd = (a, b) => b === 0 ? a : gcd(b, a % b), d = gcd(w, h);
@@ -88,7 +89,8 @@ function registerDisplay() {
 function hideAllMedia() {
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
   if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
-  if (imgEl) { imgEl.style.display = 'none'; imgEl.src = ''; }
+  if (imgEl) imgEl.style.display = 'none';
+  if (streamCanvasEl) streamCanvasEl.style.display = 'none';
   if (videoEl) {
     videoEl.style.display = 'none';
     if (videoEl.srcObject) { videoEl.srcObject.getTracks().forEach(t => t.stop()); videoEl.srcObject = null; }
@@ -167,20 +169,30 @@ async function renderMediaElement(data, fitClass, isMuted = false, customStyle =
   currentFitClass = fitClass;
 
   if (type === 'stream') {
+    if (imgEl) imgEl.style.display = 'none';
     if (videoEl) videoEl.style.display = 'none';
     if (frameEl) frameEl.style.display = 'none';
     if (textEl) textEl.style.display = 'none';
-    if (emptyEl) emptyEl.style.display = 'none';
 
-    imgEl.style.display = 'block';
-    imgEl.className = `media-elem ${fitClass}`;
+    if (streamCanvasEl) {
+      streamCanvasEl.style.display = 'block';
+      streamCanvasEl.className = `media-elem ${fitClass}`;
+    }
 
     const streamKey = targetKey || `screen_${screenId}`;
     if (!activeRtcStreamUnsub && typeof listenTvWebRtcStream === 'function') {
       activeRtcStreamUnsub = listenTvWebRtcStream(streamKey, currentRoomId, (frameData) => {
-        imgEl.style.display = 'block';
-        if (emptyEl) emptyEl.style.display = 'none';
-        imgEl.src = frameData;
+        if (!frameData) return;
+        streamBufferImg.onload = () => {
+          if (!streamCanvasEl) return;
+          if (streamCanvasEl.width !== streamBufferImg.naturalWidth) streamCanvasEl.width = streamBufferImg.naturalWidth;
+          if (streamCanvasEl.height !== streamBufferImg.naturalHeight) streamCanvasEl.height = streamBufferImg.naturalHeight;
+          const ctx = streamCanvasEl.getContext('2d');
+          ctx.drawImage(streamBufferImg, 0, 0);
+          streamCanvasEl.style.display = 'block';
+          if (emptyEl) emptyEl.style.display = 'none';
+        };
+        streamBufferImg.src = frameData;
       }, () => {
         hideAllMedia();
         if (emptyEl) emptyEl.style.display = 'flex';
