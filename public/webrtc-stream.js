@@ -1,13 +1,5 @@
-// WebRTC P2P Screen Sharing Helper via Firestore Signaling
-const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' }
-  ]
-};
-let localScreenStream = null, activePeerConnection = null, activeSignalingUnsub = null;
+// Live Screen Streaming Engine via Firestore Real-Time Frame Sync (Zero NAT / Zero TURN dependency)
+let localScreenStream = null, streamIntervalId = null, hiddenVideoEl = null, hiddenCanvasEl = null;
 
 // Emisor (Panel de Control - Admin)
 async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {}, onStopped = () => {}) {
@@ -15,7 +7,7 @@ async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {
     if (localScreenStream) stopAdminScreenShare(targetKey);
     try {
       localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30, max: 60 } },
+        video: { frameRate: { ideal: 15, max: 20 } },
         audio: false
       });
     } catch (e1) {
@@ -27,58 +19,53 @@ async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {
   }
 
   const fdb = getDb(), activeRoom = getAdminRoomId();
-  if (!fdb) return null;
+  if (!fdb || !activeRoom) return null;
 
-  activePeerConnection = new RTCPeerConnection(rtcConfig);
-  localScreenStream.getTracks().forEach(track => activePeerConnection.addTrack(track, localScreenStream));
+  if (!hiddenVideoEl) {
+    hiddenVideoEl = document.createElement('video');
+    hiddenVideoEl.autoplay = true;
+    hiddenVideoEl.muted = true;
+    hiddenVideoEl.playsInline = true;
+  }
+  hiddenVideoEl.srcObject = localScreenStream;
+  await hiddenVideoEl.play().catch(() => {});
 
-  const sessionId = Date.now().toString();
-  const webrtcDoc = fdb.collection('rooms').doc(activeRoom).collection('webrtc').doc(targetKey);
+  if (!hiddenCanvasEl) hiddenCanvasEl = document.createElement('canvas');
+  const ctx = hiddenCanvasEl.getContext('2d', { alpha: false });
 
-  activePeerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      webrtcDoc.update({
-        callerCandidates: firebase.firestore.FieldValue.arrayUnion(JSON.stringify(event.candidate.toJSON()))
-      }).catch(() => {});
-    }
-  };
+  const streamDoc = fdb.collection('rooms').doc(activeRoom).collection('live_stream').doc(targetKey);
+  await streamDoc.set({ active: true, updatedAt: Date.now() });
 
-  const offer = await activePeerConnection.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false });
-  await activePeerConnection.setLocalDescription(offer);
+  let isSending = false;
+  streamIntervalId = setInterval(async () => {
+    if (isSending || !localScreenStream || hiddenVideoEl.videoWidth === 0) return;
+    isSending = true;
 
-  await webrtcDoc.set({
-    sessionId,
-    active: true,
-    offer: { type: offer.type, sdp: offer.sdp },
-    answer: null,
-    callerCandidates: [],
-    calleeCandidates: [],
-    updatedAt: Date.now()
-  });
-
-  let processedCalleeCount = 0;
-  activeSignalingUnsub = webrtcDoc.onSnapshot(async (snap) => {
-    const data = snap.data();
-    if (!data || data.sessionId !== sessionId) return;
-
-    if (data.answer && activePeerConnection && !activePeerConnection.currentRemoteDescription) {
-      const answer = new RTCSessionDescription(data.answer);
-      await activePeerConnection.setRemoteDescription(answer);
-    }
-
-    if (data.calleeCandidates && Array.isArray(data.calleeCandidates)) {
-      while (processedCalleeCount < data.calleeCandidates.length) {
-        const raw = data.calleeCandidates[processedCalleeCount];
-        processedCalleeCount++;
-        try {
-          const cand = JSON.parse(raw);
-          if (activePeerConnection && activePeerConnection.remoteDescription) {
-            activePeerConnection.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-          }
-        } catch (e) {}
+    try {
+      const maxW = 854;
+      let w = hiddenVideoEl.videoWidth || 1280;
+      let h = hiddenVideoEl.videoHeight || 720;
+      if (w > maxW) {
+        h = Math.round((h * maxW) / w);
+        w = maxW;
       }
+      hiddenCanvasEl.width = w;
+      hiddenCanvasEl.height = h;
+
+      ctx.drawImage(hiddenVideoEl, 0, 0, w, h);
+      const frameData = hiddenCanvasEl.toDataURL('image/jpeg', 0.55);
+
+      await streamDoc.set({
+        frame: frameData,
+        active: true,
+        ts: Date.now()
+      });
+    } catch (e) {
+      console.warn('Frame sync error:', e);
+    } finally {
+      isSending = false;
     }
-  });
+  }, 100); // ~10 FPS ultra-smooth real-time
 
   localScreenStream.getVideoTracks()[0].onended = () => {
     stopAdminScreenShare(targetKey);
@@ -90,97 +77,44 @@ async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {
 }
 
 function stopAdminScreenShare(targetKey = 'screen_1') {
+  if (streamIntervalId) {
+    clearInterval(streamIntervalId);
+    streamIntervalId = null;
+  }
   if (localScreenStream) {
     localScreenStream.getTracks().forEach(t => t.stop());
     localScreenStream = null;
   }
-  if (activePeerConnection) {
-    activePeerConnection.close();
-    activePeerConnection = null;
-  }
-  if (activeSignalingUnsub) {
-    activeSignalingUnsub();
-    activeSignalingUnsub = null;
+  if (hiddenVideoEl) {
+    hiddenVideoEl.srcObject = null;
   }
   const fdb = getDb(), activeRoom = getAdminRoomId();
   if (fdb && activeRoom) {
-    fdb.collection('rooms').doc(activeRoom).collection('webrtc').doc(targetKey).set({ active: false, sessionId: null }, { merge: true }).catch(() => {});
+    fdb.collection('rooms').doc(activeRoom).collection('live_stream').doc(targetKey).set({
+      active: false,
+      frame: null,
+      ts: Date.now()
+    }).catch(() => {});
   }
 }
 
 // Receptor (Pantalla TV - Display)
-function listenTvWebRtcStream(screenId, roomId, onStreamReceived, onStreamEnded) {
+function listenTvWebRtcStream(screenId, roomId, onFrameReceived, onStreamEnded) {
   const fdb = getDb(); if (!fdb || !screenId || !roomId) return () => {};
   const targetKey = screenId.toString().startsWith('screen_') ? screenId : `screen_${screenId}`;
-  let tvPeerConn = null, currentSessionId = null, processedCallerCount = 0;
 
-  const unsub = fdb.collection('rooms').doc(roomId).collection('webrtc').doc(targetKey).onSnapshot(async (snap) => {
-    const data = snap.data();
-    if (!data || !data.active || !data.offer || !data.sessionId) {
-      if (tvPeerConn) { tvPeerConn.close(); tvPeerConn = null; }
-      currentSessionId = null;
-      processedCallerCount = 0;
+  const unsub = fdb.collection('rooms').doc(roomId).collection('live_stream').doc(targetKey).onSnapshot((snap) => {
+    if (!snap.exists) {
       onStreamEnded();
       return;
     }
-
-    if (currentSessionId === data.sessionId && tvPeerConn) {
-      if (data.callerCandidates && Array.isArray(data.callerCandidates)) {
-        while (processedCallerCount < data.callerCandidates.length) {
-          const raw = data.callerCandidates[processedCallerCount];
-          processedCallerCount++;
-          try {
-            const cand = JSON.parse(raw);
-            if (tvPeerConn && tvPeerConn.remoteDescription) {
-              tvPeerConn.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-            }
-          } catch (e) {}
-        }
-      }
+    const data = snap.data();
+    if (!data || !data.active || !data.frame) {
+      onStreamEnded();
       return;
     }
+    onFrameReceived(data.frame);
+  }, (err) => console.warn('Stream listener error:', err));
 
-    currentSessionId = data.sessionId;
-    processedCallerCount = 0;
-    if (tvPeerConn) tvPeerConn.close();
-    tvPeerConn = new RTCPeerConnection(rtcConfig);
-
-    const webrtcDoc = fdb.collection('rooms').doc(roomId).collection('webrtc').doc(targetKey);
-
-    tvPeerConn.onicecandidate = (event) => {
-      if (event.candidate) {
-        webrtcDoc.update({
-          calleeCandidates: firebase.firestore.FieldValue.arrayUnion(JSON.stringify(event.candidate.toJSON()))
-        }).catch(() => {});
-      }
-    };
-
-    tvPeerConn.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        onStreamReceived(event.streams[0]);
-      }
-    };
-
-    await tvPeerConn.setRemoteDescription(new RTCSessionDescription(data.offer));
-    const answer = await tvPeerConn.createAnswer();
-    await tvPeerConn.setLocalDescription(answer);
-
-    await webrtcDoc.set({ answer: { type: answer.type, sdp: answer.sdp } }, { merge: true });
-
-    if (data.callerCandidates && Array.isArray(data.callerCandidates)) {
-      while (processedCallerCount < data.callerCandidates.length) {
-        const raw = data.callerCandidates[processedCallerCount];
-        processedCallerCount++;
-        try {
-          const cand = JSON.parse(raw);
-          tvPeerConn.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-        } catch (e) {}
-      }
-    }
-  });
-
-  return () => {
-    unsub();
-    if (tvPeerConn) { tvPeerConn.close(); tvPeerConn = null; }
-  };
+  return unsub;
 }
