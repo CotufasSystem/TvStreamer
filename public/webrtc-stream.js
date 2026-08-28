@@ -13,10 +13,14 @@ let localScreenStream = null, activePeerConnection = null, activeSignalingUnsub 
 async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {}, onStopped = () => {}) {
   try {
     if (localScreenStream) stopAdminScreenShare(targetKey);
-    localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 30, max: 60 } },
-      audio: true
-    });
+    try {
+      localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 60 } },
+        audio: false
+      });
+    } catch (e1) {
+      localScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    }
   } catch (err) {
     if (err.name !== 'NotAllowedError') alert('Error al capturar pantalla: ' + err.message);
     return null;
@@ -39,7 +43,7 @@ async function startAdminScreenShare(targetKey = 'screen_1', onStarted = () => {
     }
   };
 
-  const offer = await activePeerConnection.createOffer();
+  const offer = await activePeerConnection.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false });
   await activePeerConnection.setLocalDescription(offer);
 
   await webrtcDoc.set({

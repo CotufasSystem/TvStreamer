@@ -87,10 +87,13 @@ function registerDisplay() {
 
 function hideAllMedia() {
   if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+  if (activeRtcStreamUnsub) { activeRtcStreamUnsub(); activeRtcStreamUnsub = null; }
   if (imgEl) imgEl.style.display = 'none';
   if (videoEl) {
     videoEl.style.display = 'none';
     if (videoEl.srcObject) { videoEl.srcObject.getTracks().forEach(t => t.stop()); videoEl.srcObject = null; }
+    videoEl.removeAttribute('src');
+    videoEl.src = '';
     try { videoEl.pause(); } catch (e) {}
   }
   if (frameEl) frameEl.style.display = 'none';
@@ -168,15 +171,24 @@ async function renderMediaElement(data, fitClass, isMuted = false, customStyle =
     if (frameEl) frameEl.style.display = 'none';
     if (textEl) textEl.style.display = 'none';
     if (emptyEl) emptyEl.style.display = 'none';
+
     videoEl.style.display = 'block';
     videoEl.className = `media-elem ${fitClass}`;
     videoEl.muted = isMuted;
+    videoEl.loop = false;
+    videoEl.removeAttribute('src');
+    videoEl.src = '';
 
     const streamKey = targetKey || `screen_${screenId}`;
     if (!activeRtcStreamUnsub && typeof listenTvWebRtcStream === 'function') {
       activeRtcStreamUnsub = listenTvWebRtcStream(streamKey, currentRoomId, (mediaStream) => {
+        videoEl.removeAttribute('src');
+        videoEl.src = '';
         videoEl.srcObject = mediaStream;
-        videoEl.play().catch(() => { videoEl.muted = true; videoEl.play(); });
+        videoEl.play().catch(() => {
+          videoEl.muted = true;
+          videoEl.play();
+        });
       }, () => {
         hideAllMedia();
         if (emptyEl) emptyEl.style.display = 'flex';
