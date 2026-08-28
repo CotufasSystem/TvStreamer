@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#09090b">
-  <title>TV Display App</title>
+  <title>TV Display Receiver Pro</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="display.css">
+  <link rel="stylesheet" href="display.css?v=5.0">
   <!-- Firebase Firestore SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="firebase-sync.js?v=10.0"></script>
+  <script src="firebase-sync.js?v=11.0"></script>
 </head>
 <body>
   <!-- Pantalla de Vinculación Principal para Android TV -->
@@ -50,11 +49,11 @@
       <div id="empty-state" class="empty-state">
         <div class="empty-icon">📺</div>
         <div class="empty-title">Pantalla <span id="empty-id">#</span> Vinculada</div>
-        <div class="empty-subtitle">Esperando emisión desde el panel de control...</div>
+        <div class="empty-subtitle">Esperando emisión desde tu panel de control...</div>
       </div>
     </div>
   </div>
 
-  <script src="display.js?v=10.0"></script>
+  <script src="display.js?v=11.0"></script>
 </body>
 </html>

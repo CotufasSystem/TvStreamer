@@ -25,7 +25,7 @@ getDb();
 function getAdminRoomId() {
   let r = localStorage.getItem('tv_admin_room_id');
   if (!r) {
-    r = 'room_' + Math.random().toString(36).substring(2, 10);
+    r = 'sala_' + Math.floor(1000 + Math.random() * 9000);
     localStorage.setItem('tv_admin_room_id', r);
   }
   return r;
@@ -55,7 +55,7 @@ function compressImage(file, maxDimension = 960, quality = 0.65) {
   });
 }
 
-// 1. PIN EN TV
+// 1. PIN EN TV (AISLADO POR PIN DOC)
 function listenTvPinPairing(pin, onPairedCallback) {
   const fdb = getDb(); if (!fdb || !pin) return;
   const cleanPin = pin.toString().trim().replace(/\D/g, '');
@@ -71,25 +71,27 @@ function listenTvPinPairing(pin, onPairedCallback) {
   }, () => {});
 }
 
-// 2. VINCULAR PIN
-async function pairTvWithPin(pin, targetScreenId, tvName, roomId) {
+// 2. VINCULAR PIN EXCLUSIVO A LA SALA DEL ADMIN
+async function pairTvWithPin(pin, targetScreenId, tvName) {
   const fdb = getDb(); if (!fdb) throw new Error('Firestore no disponible');
   const cleanPin = pin.toString().trim().replace(/\D/g, ''), screenNum = parseInt(targetScreenId, 10);
-  const activeRoom = roomId || getAdminRoomId();
+  const activeRoom = getAdminRoomId();
+
   await fdb.collection('tv_pins').doc(cleanPin).set({
     pin: cleanPin, assignedScreenId: screenNum, tvName: tvName || `TV ${screenNum}`, roomId: activeRoom, paired: true, pairedAt: Date.now()
   }, { merge: true });
+
   await fdb.collection('rooms').doc(activeRoom).collection('displays').doc(screenNum.toString()).set({
-    screenId: screenNum, tvName: tvName || `TV ${screenNum}`, online: true, lastSeen: Date.now()
+    screenId: screenNum, tvName: tvName || `TV ${screenNum}`, roomId: activeRoom, online: true, lastSeen: Date.now()
   }, { merge: true });
   return true;
 }
 
 // 3. DESVINCULAR
-function unpairTv(screenId, roomId) {
+function unpairTv(screenId) {
   const fdb = getDb(); if (!fdb || !screenId) return;
-  const activeRoom = roomId || getAdminRoomId();
-  fdb.collection('rooms').doc(activeRoom).collection('displays').doc(screenId.toString()).update({ online: false }).catch(() => {});
+  const activeRoom = getAdminRoomId();
+  fdb.collection('rooms').doc(activeRoom).collection('displays').doc(screenId.toString()).delete().catch(() => {});
   fdb.collection('rooms').doc(activeRoom).collection('unpair').doc(screenId.toString()).set({ timestamp: Date.now() }).catch(() => {});
   deleteVideoFromFirestore(screenId, activeRoom);
 }
@@ -99,11 +101,11 @@ function listenUnpairSignal(screenId, roomId, callback) {
   fdb.collection('rooms').doc(roomId).collection('unpair').doc(screenId.toString()).onSnapshot((doc) => { if (doc.exists) callback(); }, () => {});
 }
 
-// 4. ESTADO MULTIMEDIA
+// 4. ESTADO MULTIMEDIA EXCLUSIVO DE LA SALA
 function listenFirebaseState(roomId, callback) {
   const fdb = getDb(); if (!fdb || !roomId) return;
   fdb.collection('rooms').doc(roomId).collection('config').doc('state').onSnapshot((doc) => {
-    if (!doc.exists) return;
+    if (!doc.exists) { callback(null); return; }
     const data = doc.data();
     if (data && data.payload) {
       try { callback(JSON.parse(data.payload)); } catch (e) {}
@@ -111,9 +113,9 @@ function listenFirebaseState(roomId, callback) {
   }, (err) => console.error('Error state:', err));
 }
 
-function updateFirebaseState(newState, roomId) {
+function updateFirebaseState(newState) {
   const fdb = getDb(); if (!fdb) return;
-  const activeRoom = roomId || getAdminRoomId();
+  const activeRoom = getAdminRoomId();
   try {
     fdb.collection('rooms').doc(activeRoom).collection('config').doc('state').set({
       payload: JSON.stringify(newState),
@@ -131,10 +133,10 @@ function blobToBase64(blob) {
   });
 }
 
-async function uploadVideoToFirestore(file, targetKey = 'screen_1', onProgress = () => {}, roomId) {
+async function uploadVideoToFirestore(file, targetKey = 'screen_1', onProgress = () => {}) {
   const fdb = getDb();
   if (!fdb) throw new Error('Firestore no conectado');
-  const activeRoom = roomId || getAdminRoomId();
+  const activeRoom = getAdminRoomId();
   const CHUNK_SIZE = 800 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const videoId = `vid_${Date.now()}`;
