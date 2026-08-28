@@ -1,5 +1,6 @@
 const socket = (typeof io === 'function') ? io() : { on: () => {}, emit: () => {} };
 let screenId = null, currentRoomId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentFitClass = 'fit-contain', currentlyPlayingSrc = null, activeBlobUrl = null;
+let unpairListenerUnsub = null;
 
 const setupOverlay = document.getElementById('setup-overlay'), pinDisplayEl = document.getElementById('display-pin-code');
 const badgeIdEl = document.getElementById('badge-id'), statusDot = document.getElementById('status-dot'), emptyIdEl = document.getElementById('empty-id');
@@ -45,6 +46,13 @@ function onTvPaired(assignedId, roomId) {
   if (setupOverlay) setupOverlay.style.display = 'none';
 
   registerDisplay();
+  if (typeof listenDisplayActive === 'function') {
+    if (unpairListenerUnsub) { unpairListenerUnsub(); unpairListenerUnsub = null; }
+    unpairListenerUnsub = listenDisplayActive(screenId, currentRoomId, () => {
+      unpairThisTv();
+    });
+  }
+
   if (typeof listenFirebaseState === 'function') {
     listenFirebaseState(currentRoomId, (state) => {
       if (state) renderState(state);
@@ -53,6 +61,7 @@ function onTvPaired(assignedId, roomId) {
 }
 
 function unpairThisTv() {
+  if (unpairListenerUnsub) { unpairListenerUnsub(); unpairListenerUnsub = null; }
   localStorage.removeItem('tv_screen_id');
   localStorage.removeItem('tv_screen_room');
   screenId = null;

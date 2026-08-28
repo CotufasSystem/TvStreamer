@@ -102,6 +102,19 @@ function unpairTv(screenId) {
   deleteVideoFromFirestore(screenId, activeRoom);
 }
 
+// Escuchar si la pantalla fue eliminada en el admin
+function listenDisplayActive(screenId, roomId, onUnpaired) {
+  const fdb = getDb(); if (!fdb || !screenId || !roomId) return () => {};
+  let initialized = false;
+  return fdb.collection('rooms').doc(roomId).collection('displays').doc(screenId.toString()).onSnapshot((doc) => {
+    if (!initialized) {
+      if (doc.exists) initialized = true;
+      return;
+    }
+    if (!doc.exists) onUnpaired();
+  }, () => {});
+}
+
 // 4. ESTADO MULTIMEDIA EXCLUSIVO
 function listenFirebaseState(roomId, callback) {
   const fdb = getDb(); if (!fdb || !roomId) return;
