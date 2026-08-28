@@ -6,9 +6,7 @@ const defaultState = {
 };
 let currentState = JSON.parse(JSON.stringify(defaultState)), currentDisplays = [], targetSlideshowScreenId = null, tempIndividualPlaylist = [], tempMirrorPlaylist = [];
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => { regs.forEach(r => r.unregister()); });
-}
+if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(regs => { regs.forEach(r => r.unregister()); });
 
 function renderUI() {
   const tM = document.getElementById('tab-mirror'), tS = document.getElementById('tab-split'), tI = document.getElementById('tab-individual');
@@ -20,7 +18,7 @@ function renderUI() {
 }
 function switchMode(mode) { currentState.mode = mode; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 function resetMyRoom() {
-  const n = prompt('Ingresa el nombre o código de sala a usar (o deja vacío para generar una nueva):');
+  const n = prompt('Ingresa código de sala (vacío para generar una nueva):');
   if (n !== null) {
     if (n.trim()) setAdminRoomId(n);
     else { localStorage.removeItem('tv_admin_room_id'); window.location.reload(); }
@@ -36,11 +34,12 @@ function renderDisplaysStatus() {
   if (roomBadge && myRoom) roomBadge.textContent = `🔒 Sala: ${myRoom.replace('sala_', '#')}`;
 
   for (let id = 1; id <= 7; id++) {
-    const disp = displayMap.get(id);
-    const isOnline = Boolean(disp && disp.online === true && disp.roomId === myRoom);
-    const specs = disp && disp.specs ? disp.specs : null;
-    const chip = document.createElement('a'); chip.className = 'status-chip'; chip.href = `/display.html?id=${id}&room=${myRoom}`; chip.target = '_blank';
-    let specHtml = isOnline ? (specs ? `${specs.resLabel} (${specs.aspect})` : 'Conectada 🟢') : 'Sin vincular ⚪';
+    const disp = displayMap.get(id), isOnline = Boolean(disp && disp.online === true && disp.roomId === myRoom), specs = disp && disp.specs ? disp.specs : null;
+    const chip = document.createElement('div');
+    chip.className = `status-chip ${isOnline ? 'connected' : 'unpaired'}`;
+    chip.style.cursor = isOnline ? 'default' : 'pointer';
+    chip.onclick = () => { if (!isOnline) openPairModal(id); };
+    let specHtml = isOnline ? (specs ? `${specs.resLabel} (${specs.aspect})` : 'Conectada 🟢') : 'Sin vincular ⚪ (Toca para vincular)';
     chip.innerHTML = `<div class="status-chip-header"><span>📺 TV ${id}</span><div style="display:flex; align-items:center; gap:6px;"><span class="chip-status-dot ${isOnline ? 'online' : ''}"></span>${isOnline ? `<button class="thumb-remove-btn" style="position:static; width:16px; height:16px;" onclick="handleUnpairTv(${id}, event)">✕</button>` : ''}</div></div><span class="spec-tag">${specHtml}</span>`;
     container.appendChild(chip);
   }
@@ -71,8 +70,8 @@ function renderMirrorView() {
   } else box.style.display = 'none';
 }
 function renderSplitView() {
-  const conf = currentState.splitConfig || { cols: 7, layout: [[1,2,3,4,5,6,7]] };
-  const fitSelect = document.getElementById('split-fit'); if (fitSelect) fitSelect.value = conf.fit || 'cover';
+  const conf = currentState.splitConfig || { cols: 7, layout: [[1,2,3,4,5,6,7]] }, fitSelect = document.getElementById('split-fit');
+  if (fitSelect) fitSelect.value = conf.fit || 'cover';
   const grid = document.getElementById('wall-matrix-grid');
   if (grid) {
     grid.style.gridTemplateColumns = `repeat(${conf.cols || 7}, 1fr)`; grid.innerHTML = '';
@@ -113,7 +112,7 @@ function renderIndividualView() {
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
         <input type="file" id="file-screen-${id}" accept="image/*,video/*" style="display:none" onchange="uploadScreenMedia(${id}, this)">
         <button id="btn-file-${id}" class="btn btn-outline" style="flex:1" onclick="document.getElementById('file-screen-${id}').click()">🎬 Archivo</button>
-        <button class="btn btn-outline" onclick="openSlideshowModal(${id})">🎠 Playlist [+]</button>
+        <button class="btn btn-outline" onclick="openPairModal(${id})">🎠 Playlist [+]</button>
         <button class="btn btn-outline" onclick="promptScreenUrl(${id})">🌐 URL</button>
         <button class="btn btn-outline" onclick="promptScreenText(${id})">📢 Texto</button>
         ${data.type && data.type !== 'empty' ? `<button class="btn-remove" onclick="clearScreenMedia(${id})">🗑</button>` : ''}
@@ -212,8 +211,7 @@ function sendMirrorText() {
 }
 function clearMirrorMedia() {
   if (typeof deleteVideoFromFirestore === 'function') deleteVideoFromFirestore('mirror');
-  currentState.mirrorConfig = { type: 'empty', src: null, items: [], text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
-}
+  currentState.mirrorConfig = { type: 'empty', src: null, items: [], text: '' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 async function handleSplitFileUpload(input) {
   if (input.files.length > 0) {
     const { url, type } = await uploadMedia(input.files[0], 'split');
@@ -274,7 +272,11 @@ function clearAllScreens() {
   if (typeof deleteVideoFromFirestore === 'function') { deleteVideoFromFirestore('mirror'); deleteVideoFromFirestore('split'); }
   currentState = JSON.parse(JSON.stringify(defaultState)); renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
-function openPairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'flex'; }
+function openPairModal(preSelectedTv = '1') {
+  const m = document.getElementById('pair-modal'), s = document.getElementById('pair-target-select');
+  if (s && preSelectedTv) s.value = preSelectedTv.toString();
+  if (m) m.style.display = 'flex';
+}
 function closePairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'none'; }
 async function submitPairPin() {
   const pinInput = document.getElementById('pin-input'), selectEl = document.getElementById('pair-target-select'), btn = document.getElementById('btn-submit-pair');
