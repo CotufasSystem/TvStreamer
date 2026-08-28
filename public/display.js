@@ -47,7 +47,7 @@ function onTvPaired(assignedId, roomId) {
 
   localStorage.setItem('tv_screen_id', screenId);
   localStorage.setItem('tv_screen_room', currentRoomId);
-  if (badgeIdEl) badgeIdEl.textContent = screenId;
+  if (badgeIdEl) badgeIdEl.textContent = `${screenId} (${roomId.replace('sala_', '#')})`;
   if (emptyIdEl) emptyIdEl.textContent = screenId;
   if (setupOverlay) setupOverlay.style.display = 'none';
 
@@ -100,7 +100,7 @@ function hideAllMedia() {
   if (imgEl) imgEl.style.display = 'none';
   if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
   if (frameEl) frameEl.style.display = 'none';
-  if (textEl) textEl.style.display = 'none';
+  if (textEl) { textEl.style.display = 'none'; textEl.textContent = ''; }
   currentlyPlayingSrc = null;
   cleanActiveLocalBlob();
 }
@@ -123,9 +123,7 @@ async function playVideoWithAudio(src, isLoop = true) {
   if (!finalSrc) return;
   currentlyPlayingSrc = src;
 
-  if (imgEl) imgEl.style.display = 'none';
-  if (frameEl) frameEl.style.display = 'none';
-  if (textEl) textEl.style.display = 'none';
+  hideAllMedia();
   if (emptyEl) emptyEl.style.display = 'none';
 
   videoEl.style.display = 'block';
@@ -188,6 +186,8 @@ function startSlideshow(items, intervalSeconds, fitClass) {
 async function renderMediaElement(data, fitClass, isMuted = false, customStyle = {}) {
   const { type, src, items, interval, text } = data || {};
   currentFitClass = fitClass;
+  hideAllMedia();
+
   if (type === 'image' && src) {
     let finalSrc = src;
     if (src.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') finalSrc = await loadVideoFromFirestore(src, currentRoomId);
