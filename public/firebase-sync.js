@@ -71,7 +71,7 @@ function listenTvPinPairing(pin, onPairedCallback) {
   const unsub = pinDoc.onSnapshot((snap) => {
     if (!snap.exists) return;
     const data = snap.data();
-    if (data && data.paired && data.assignedScreenId && data.roomId) {
+    if (data && data.paired === true && data.assignedScreenId && data.roomId) {
       unsub();
       onPairedCallback(data.assignedScreenId, data.roomId);
     }
@@ -83,9 +83,6 @@ async function pairTvWithPin(pin, targetScreenId, tvName) {
   const fdb = getDb(); if (!fdb) throw new Error('Firestore no disponible');
   const cleanPin = pin.toString().trim().replace(/\D/g, ''), screenNum = parseInt(targetScreenId, 10);
   const activeRoom = getAdminRoomId();
-
-  // Limpiar señal de desvinculación anterior para evitar falsos positivos
-  await fdb.collection('rooms').doc(activeRoom).collection('unpair').doc(screenNum.toString()).delete().catch(() => {});
 
   await fdb.collection('tv_pins').doc(cleanPin).set({
     pin: cleanPin, assignedScreenId: screenNum, tvName: tvName || `TV ${screenNum}`, roomId: activeRoom, paired: true, pairedAt: Date.now()
@@ -102,19 +99,7 @@ function unpairTv(screenId) {
   const fdb = getDb(); if (!fdb || !screenId) return;
   const activeRoom = getAdminRoomId();
   fdb.collection('rooms').doc(activeRoom).collection('displays').doc(screenId.toString()).delete().catch(() => {});
-  fdb.collection('rooms').doc(activeRoom).collection('unpair').doc(screenId.toString()).set({ timestamp: Date.now() }).catch(() => {});
   deleteVideoFromFirestore(screenId, activeRoom);
-}
-
-function listenUnpairSignal(screenId, roomId, pairedTimestamp, callback) {
-  const fdb = getDb(); if (!fdb || !screenId || !roomId) return;
-  const startTs = pairedTimestamp || Date.now();
-  fdb.collection('rooms').doc(roomId).collection('unpair').doc(screenId.toString()).onSnapshot((doc) => {
-    if (doc.exists) {
-      const data = doc.data();
-      if (data && data.timestamp && data.timestamp > startTs) callback();
-    }
-  }, () => {});
 }
 
 // 4. ESTADO MULTIMEDIA EXCLUSIVO

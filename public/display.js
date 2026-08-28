@@ -28,14 +28,15 @@ function showPairingScreen() {
   currentPin = Math.floor(100000 + Math.random() * 900000).toString();
   if (pinDisplayEl) pinDisplayEl.textContent = `${currentPin.slice(0, 3)} - ${currentPin.slice(3)}`;
   if (typeof listenTvPinPairing === 'function') {
-    listenTvPinPairing(currentPin, (assignedId, roomId) => { onTvPaired(assignedId, roomId); });
+    listenTvPinPairing(currentPin, (assignedId, roomId) => {
+      onTvPaired(assignedId, roomId);
+    });
   }
 }
 
 function onTvPaired(assignedId, roomId) {
   screenId = parseInt(assignedId, 10);
   currentRoomId = roomId;
-  const pairedAt = Date.now();
 
   localStorage.setItem('tv_screen_id', screenId);
   localStorage.setItem('tv_screen_room', currentRoomId);
@@ -44,9 +45,6 @@ function onTvPaired(assignedId, roomId) {
   if (setupOverlay) setupOverlay.style.display = 'none';
 
   registerDisplay();
-  if (typeof listenUnpairSignal === 'function') {
-    listenUnpairSignal(screenId, currentRoomId, pairedAt, () => unpairThisTv());
-  }
   if (typeof listenFirebaseState === 'function') {
     listenFirebaseState(currentRoomId, (state) => {
       if (state) renderState(state);
