@@ -18,13 +18,9 @@ function initDisplay() {
   const savedId = localStorage.getItem('tv_screen_id');
   const savedRoom = localStorage.getItem('tv_screen_room');
 
-  if (paramId && paramRoom) {
-    onTvPaired(paramId, paramRoom);
-  } else if (savedId && savedRoom) {
-    onTvPaired(savedId, savedRoom);
-  } else {
-    unpairThisTv();
-  }
+  if (paramId && paramRoom) onTvPaired(paramId, paramRoom);
+  else if (savedId && savedRoom) onTvPaired(savedId, savedRoom);
+  else showPairingScreen();
 }
 
 function showPairingScreen() {
@@ -39,6 +35,8 @@ function showPairingScreen() {
 function onTvPaired(assignedId, roomId) {
   screenId = parseInt(assignedId, 10);
   currentRoomId = roomId;
+  const pairedAt = Date.now();
+
   localStorage.setItem('tv_screen_id', screenId);
   localStorage.setItem('tv_screen_room', currentRoomId);
   if (badgeIdEl) badgeIdEl.textContent = screenId;
@@ -47,7 +45,7 @@ function onTvPaired(assignedId, roomId) {
 
   registerDisplay();
   if (typeof listenUnpairSignal === 'function') {
-    listenUnpairSignal(screenId, currentRoomId, () => unpairThisTv());
+    listenUnpairSignal(screenId, currentRoomId, pairedAt, () => unpairThisTv());
   }
   if (typeof listenFirebaseState === 'function') {
     listenFirebaseState(currentRoomId, (state) => {

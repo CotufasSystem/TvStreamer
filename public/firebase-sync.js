@@ -71,18 +71,21 @@ function listenTvPinPairing(pin, onPairedCallback) {
   const unsub = pinDoc.onSnapshot((snap) => {
     if (!snap.exists) return;
     const data = snap.data();
-    if (data && data.assignedScreenId && data.roomId) {
-      unsub(); pinDoc.delete().catch(() => {});
+    if (data && data.paired && data.assignedScreenId && data.roomId) {
+      unsub();
       onPairedCallback(data.assignedScreenId, data.roomId);
     }
   }, () => {});
 }
 
-// 2. VINCULAR PIN EXCLUSIVO A LA SALA DEL ADMIN
+// 2. VINCULAR PIN
 async function pairTvWithPin(pin, targetScreenId, tvName) {
   const fdb = getDb(); if (!fdb) throw new Error('Firestore no disponible');
   const cleanPin = pin.toString().trim().replace(/\D/g, ''), screenNum = parseInt(targetScreenId, 10);
   const activeRoom = getAdminRoomId();
+
+  // Limpiar señal de desvinculación anterior para evitar falsos positivos
+  await fdb.collection('rooms').doc(activeRoom).collection('unpair').doc(screenNum.toString()).delete().catch(() => {});
 
   await fdb.collection('tv_pins').doc(cleanPin).set({
     pin: cleanPin, assignedScreenId: screenNum, tvName: tvName || `TV ${screenNum}`, roomId: activeRoom, paired: true, pairedAt: Date.now()
@@ -103,12 +106,18 @@ function unpairTv(screenId) {
   deleteVideoFromFirestore(screenId, activeRoom);
 }
 
-function listenUnpairSignal(screenId, roomId, callback) {
+function listenUnpairSignal(screenId, roomId, pairedTimestamp, callback) {
   const fdb = getDb(); if (!fdb || !screenId || !roomId) return;
-  fdb.collection('rooms').doc(roomId).collection('unpair').doc(screenId.toString()).onSnapshot((doc) => { if (doc.exists) callback(); }, () => {});
+  const startTs = pairedTimestamp || Date.now();
+  fdb.collection('rooms').doc(roomId).collection('unpair').doc(screenId.toString()).onSnapshot((doc) => {
+    if (doc.exists) {
+      const data = doc.data();
+      if (data && data.timestamp && data.timestamp > startTs) callback();
+    }
+  }, () => {});
 }
 
-// 4. ESTADO MULTIMEDIA EXCLUSIVO DE LA SALA
+// 4. ESTADO MULTIMEDIA EXCLUSIVO
 function listenFirebaseState(roomId, callback) {
   const fdb = getDb(); if (!fdb || !roomId) return;
   fdb.collection('rooms').doc(roomId).collection('config').doc('state').onSnapshot((doc) => {
