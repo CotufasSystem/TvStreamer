@@ -23,9 +23,10 @@ function renderDisplaysStatus() {
   const container = document.getElementById('displays-status-container'); if (!container) return;
   const displayMap = new Map(); currentDisplays.forEach(d => { if (d && d.screenId) displayMap.set(d.screenId, d); });
   container.innerHTML = '';
+  const myRoom = (typeof getAdminRoomId === 'function') ? getAdminRoomId() : '';
   for (let id = 1; id <= 7; id++) {
     const disp = displayMap.get(id), isOnline = disp ? (disp.online !== undefined ? disp.online : true) : false, specs = disp && disp.specs ? disp.specs : null;
-    const chip = document.createElement('a'); chip.className = 'status-chip'; chip.href = `/display.html?id=${id}`; chip.target = '_blank';
+    const chip = document.createElement('a'); chip.className = 'status-chip'; chip.href = `/display.html?id=${id}&room=${myRoom}`; chip.target = '_blank';
     let specHtml = isOnline ? (specs ? `${specs.resLabel} (${specs.aspect})` : 'Conectada 🟢') : 'Sin vincular ⚪';
     chip.innerHTML = `<div class="status-chip-header"><span>📺 TV ${id}</span><div style="display:flex; align-items:center; gap:6px;"><span class="chip-status-dot ${isOnline ? 'online' : ''}"></span>${isOnline ? `<button class="thumb-remove-btn" style="position:static; width:16px; height:16px;" onclick="handleUnpairTv(${id}, event)">✕</button>` : ''}</div></div><span class="spec-tag">${specHtml}</span>`;
     container.appendChild(chip);
@@ -286,13 +287,14 @@ async function submitPairPin() {
   try {
     if (typeof pairTvWithPin === 'function') {
       await pairTvWithPin(cleanPin, targetScreenId, `TV ${targetScreenId}`);
-      alert(`🎉 ¡TV ${targetScreenId} vinculada!`);
+      alert(`🎉 ¡TV ${targetScreenId} vinculada a tu cuenta!`);
       closePairModal(); if (pinInput) pinInput.value = '';
     }
   } catch (err) { alert('Error: ' + (err.message || 'Fallo')); }
   finally { if (btn) { btn.textContent = 'Vincular Ahora'; btn.disabled = false; } }
 }
 
-if (typeof listenFirebaseDisplays === 'function') listenFirebaseDisplays((d) => { if (d && d.length) { currentDisplays = d; renderDisplaysStatus(); } });
-if (typeof listenFirebaseState === 'function') listenFirebaseState((s) => { if (s) { currentState = Object.assign(currentState, s); renderUI(); } });
+const myActiveRoom = (typeof getAdminRoomId === 'function') ? getAdminRoomId() : null;
+if (typeof listenFirebaseDisplays === 'function' && myActiveRoom) listenFirebaseDisplays(myActiveRoom, (d) => { if (d) { currentDisplays = d; renderDisplaysStatus(); } });
+if (typeof listenFirebaseState === 'function' && myActiveRoom) listenFirebaseState(myActiveRoom, (s) => { if (s) { currentState = Object.assign(currentState, s); renderUI(); } });
 renderUI();

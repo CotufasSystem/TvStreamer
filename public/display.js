@@ -1,5 +1,5 @@
 const socket = (typeof io === 'function') ? io() : { on: () => {}, emit: () => {} };
-let screenId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentInterval = 5, currentFitClass = 'fit-contain', currentlyPlayingSrc = null, activeBlobUrl = null;
+let screenId = null, currentRoomId = null, currentPin = null, slideTimer = null, currentPlaylist = [], currentSlideIndex = 0, currentFitClass = 'fit-contain', currentlyPlayingSrc = null, activeBlobUrl = null;
 
 const setupOverlay = document.getElementById('setup-overlay'), pinDisplayEl = document.getElementById('display-pin-code');
 const badgeIdEl = document.getElementById('badge-id'), statusDot = document.getElementById('status-dot'), emptyIdEl = document.getElementById('empty-id');
@@ -14,7 +14,8 @@ function getDisplaySpecs() {
 function initDisplay() {
   const urlParams = new URLSearchParams(window.location.search);
   const paramId = urlParams.get('id') || localStorage.getItem('tv_screen_id');
-  if (paramId) onTvPaired(paramId);
+  const paramRoom = urlParams.get('room') || localStorage.getItem('tv_screen_room');
+  if (paramId && paramRoom) onTvPaired(paramId, paramRoom);
   else showPairingScreen();
 }
 
@@ -23,25 +24,35 @@ function showPairingScreen() {
   currentPin = Math.floor(100000 + Math.random() * 900000).toString();
   if (pinDisplayEl) pinDisplayEl.textContent = `${currentPin.slice(0, 3)} - ${currentPin.slice(3)}`;
   if (typeof listenTvPinPairing === 'function') {
-    listenTvPinPairing(currentPin, (assignedId) => { onTvPaired(assignedId); });
+    listenTvPinPairing(currentPin, (assignedId, roomId) => { onTvPaired(assignedId, roomId); });
   }
 }
 
-function onTvPaired(assignedId) {
+function onTvPaired(assignedId, roomId) {
   screenId = parseInt(assignedId, 10);
+  currentRoomId = roomId;
   localStorage.setItem('tv_screen_id', screenId);
+  localStorage.setItem('tv_screen_room', currentRoomId);
   if (badgeIdEl) badgeIdEl.textContent = screenId;
   if (emptyIdEl) emptyIdEl.textContent = screenId;
   if (setupOverlay) setupOverlay.style.display = 'none';
+
   registerDisplay();
   if (typeof listenUnpairSignal === 'function') {
-    listenUnpairSignal(screenId, () => unpairThisTv());
+    listenUnpairSignal(screenId, currentRoomId, () => unpairThisTv());
+  }
+  if (typeof listenFirebaseState === 'function') {
+    listenFirebaseState(currentRoomId, (state) => {
+      if (state) renderState(state);
+    });
   }
 }
 
 function unpairThisTv() {
   localStorage.removeItem('tv_screen_id');
+  localStorage.removeItem('tv_screen_room');
   screenId = null;
+  currentRoomId = null;
   currentlyPlayingSrc = null;
   cleanActiveLocalBlob();
   hideAllMedia();
@@ -57,15 +68,9 @@ function cleanActiveLocalBlob() {
 
 function registerDisplay() {
   const specs = getDisplaySpecs();
-  if (typeof reportFirebaseSpecs === 'function' && screenId) {
-    reportFirebaseSpecs(screenId, specs);
+  if (typeof reportFirebaseSpecs === 'function' && screenId && currentRoomId) {
+    reportFirebaseSpecs(screenId, specs, currentRoomId);
   }
-}
-
-if (typeof listenFirebaseState === 'function') {
-  listenFirebaseState((state) => {
-    if (state) renderState(state);
-  });
 }
 
 function hideAllMedia() {
@@ -89,7 +94,7 @@ async function playVideoWithAudio(src, isLoop = true) {
   let finalSrc = src;
   if (src.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') {
     cleanActiveLocalBlob();
-    finalSrc = await loadVideoFromFirestore(src);
+    finalSrc = await loadVideoFromFirestore(src, currentRoomId);
     activeBlobUrl = finalSrc;
   }
 
@@ -138,7 +143,7 @@ async function showNextSlide() {
     if (videoEl) { videoEl.style.display = 'none'; try { videoEl.pause(); } catch (e) {} }
     let finalImg = url;
     if (url.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') {
-      finalImg = await loadVideoFromFirestore(url);
+      finalImg = await loadVideoFromFirestore(url, currentRoomId);
     }
     if (imgEl) {
       imgEl.style.display = 'block'; imgEl.className = `media-elem ${currentFitClass}`;
@@ -163,7 +168,7 @@ async function renderMediaElement(data, fitClass, isMuted = false, customStyle =
   currentFitClass = fitClass;
   if (type === 'image' && src) {
     let finalSrc = src;
-    if (src.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') finalSrc = await loadVideoFromFirestore(src);
+    if (src.startsWith('tvvideo://') && typeof loadVideoFromFirestore === 'function') finalSrc = await loadVideoFromFirestore(src, currentRoomId);
     if (imgEl) { imgEl.style.display = 'block'; imgEl.className = `media-elem ${fitClass}`; Object.assign(imgEl.style, customStyle); if (imgEl.src !== finalSrc) imgEl.src = finalSrc; }
   } else if (type === 'slideshow') {
     if (imgEl) Object.assign(imgEl.style, customStyle);

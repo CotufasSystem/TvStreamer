@@ -22,6 +22,15 @@ function getDb() {
 }
 getDb();
 
+function getAdminRoomId() {
+  let r = localStorage.getItem('tv_admin_room_id');
+  if (!r) {
+    r = 'room_' + Math.random().toString(36).substring(2, 10);
+    localStorage.setItem('tv_admin_room_id', r);
+  }
+  return r;
+}
+
 function compressImage(file, maxDimension = 960, quality = 0.65) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -55,43 +64,45 @@ function listenTvPinPairing(pin, onPairedCallback) {
   const unsub = pinDoc.onSnapshot((snap) => {
     if (!snap.exists) return;
     const data = snap.data();
-    if (data && data.assignedScreenId) {
+    if (data && data.assignedScreenId && data.roomId) {
       unsub(); pinDoc.delete().catch(() => {});
-      onPairedCallback(data.assignedScreenId);
+      onPairedCallback(data.assignedScreenId, data.roomId);
     }
   }, () => {});
 }
 
 // 2. VINCULAR PIN
-async function pairTvWithPin(pin, targetScreenId, tvName) {
+async function pairTvWithPin(pin, targetScreenId, tvName, roomId) {
   const fdb = getDb(); if (!fdb) throw new Error('Firestore no disponible');
   const cleanPin = pin.toString().trim().replace(/\D/g, ''), screenNum = parseInt(targetScreenId, 10);
+  const activeRoom = roomId || getAdminRoomId();
   await fdb.collection('tv_pins').doc(cleanPin).set({
-    pin: cleanPin, assignedScreenId: screenNum, tvName: tvName || `TV ${screenNum}`, paired: true, pairedAt: Date.now()
+    pin: cleanPin, assignedScreenId: screenNum, tvName: tvName || `TV ${screenNum}`, roomId: activeRoom, paired: true, pairedAt: Date.now()
   }, { merge: true });
-  await fdb.collection('tv_streamer').doc('displays').set({
-    [screenNum]: { screenId: screenNum, tvName: tvName || `TV ${screenNum}`, online: true, lastSeen: Date.now() }
+  await fdb.collection('rooms').doc(activeRoom).collection('displays').doc(screenNum.toString()).set({
+    screenId: screenNum, tvName: tvName || `TV ${screenNum}`, online: true, lastSeen: Date.now()
   }, { merge: true });
   return true;
 }
 
 // 3. DESVINCULAR
-function unpairTv(screenId) {
+function unpairTv(screenId, roomId) {
   const fdb = getDb(); if (!fdb || !screenId) return;
-  fdb.collection('tv_streamer').doc('displays').update({ [`${screenId}.online`]: false }).catch(() => {});
-  fdb.collection('tv_unpair').doc(screenId.toString()).set({ timestamp: Date.now() }).catch(() => {});
-  deleteVideoFromFirestore(screenId);
+  const activeRoom = roomId || getAdminRoomId();
+  fdb.collection('rooms').doc(activeRoom).collection('displays').doc(screenId.toString()).update({ online: false }).catch(() => {});
+  fdb.collection('rooms').doc(activeRoom).collection('unpair').doc(screenId.toString()).set({ timestamp: Date.now() }).catch(() => {});
+  deleteVideoFromFirestore(screenId, activeRoom);
 }
 
-function listenUnpairSignal(screenId, callback) {
-  const fdb = getDb(); if (!fdb || !screenId) return;
-  fdb.collection('tv_unpair').doc(screenId.toString()).onSnapshot((doc) => { if (doc.exists) callback(); }, () => {});
+function listenUnpairSignal(screenId, roomId, callback) {
+  const fdb = getDb(); if (!fdb || !screenId || !roomId) return;
+  fdb.collection('rooms').doc(roomId).collection('unpair').doc(screenId.toString()).onSnapshot((doc) => { if (doc.exists) callback(); }, () => {});
 }
 
 // 4. ESTADO MULTIMEDIA
-function listenFirebaseState(callback) {
-  const fdb = getDb(); if (!fdb) return;
-  fdb.collection('tv_streamer').doc('state').onSnapshot((doc) => {
+function listenFirebaseState(roomId, callback) {
+  const fdb = getDb(); if (!fdb || !roomId) return;
+  fdb.collection('rooms').doc(roomId).collection('config').doc('state').onSnapshot((doc) => {
     if (!doc.exists) return;
     const data = doc.data();
     if (data && data.payload) {
@@ -100,17 +111,18 @@ function listenFirebaseState(callback) {
   }, (err) => console.error('Error state:', err));
 }
 
-function updateFirebaseState(newState) {
+function updateFirebaseState(newState, roomId) {
   const fdb = getDb(); if (!fdb) return;
+  const activeRoom = roomId || getAdminRoomId();
   try {
-    fdb.collection('tv_streamer').doc('state').set({
+    fdb.collection('rooms').doc(activeRoom).collection('config').doc('state').set({
       payload: JSON.stringify(newState),
       updatedAt: Date.now()
     }).catch((e) => console.error('Error actualizando estado:', e));
   } catch (err) { console.error('Error serializando:', err); }
 }
 
-// 5. SUBIDA Y CARGA DE VIDEOS EN COLECCIÓN 'tv_videos'
+// 5. VIDEOS POR SALA
 function blobToBase64(blob) {
   return new Promise((resolve) => {
     const r = new FileReader();
@@ -119,14 +131,15 @@ function blobToBase64(blob) {
   });
 }
 
-async function uploadVideoToFirestore(file, targetKey = 'screen_1', onProgress = () => {}) {
+async function uploadVideoToFirestore(file, targetKey = 'screen_1', onProgress = () => {}, roomId) {
   const fdb = getDb();
   if (!fdb) throw new Error('Firestore no conectado');
+  const activeRoom = roomId || getAdminRoomId();
   const CHUNK_SIZE = 800 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const videoId = `vid_${Date.now()}`;
 
-  await fdb.collection('tv_videos').doc(targetKey).set({
+  await fdb.collection('rooms').doc(activeRoom).collection('videos').doc(targetKey).set({
     videoId, totalChunks, mimeType: file.type || 'video/mp4', size: file.size, name: file.name, createdAt: Date.now()
   });
 
@@ -136,7 +149,7 @@ async function uploadVideoToFirestore(file, targetKey = 'screen_1', onProgress =
     const slice = file.slice(i * CHUNK_SIZE, Math.min(file.size, (i + 1) * CHUNK_SIZE));
     uploadPromises.push((async (idx, sl) => {
       const b64 = await blobToBase64(sl);
-      await fdb.collection('tv_videos').doc(targetKey).collection('chunks').doc(`part_${idx}`).set({
+      await fdb.collection('rooms').doc(activeRoom).collection('videos').doc(targetKey).collection('chunks').doc(`part_${idx}`).set({
         data: b64, index: idx
       });
       completed++;
@@ -145,21 +158,23 @@ async function uploadVideoToFirestore(file, targetKey = 'screen_1', onProgress =
   }
 
   await Promise.all(uploadPromises);
-  return `tvvideo://${targetKey}?id=${videoId}`;
+  return `tvvideo://${targetKey}?id=${videoId}&room=${activeRoom}`;
 }
 
-async function loadVideoFromFirestore(videoUri) {
+async function loadVideoFromFirestore(videoUri, defaultRoom) {
   const fdb = getDb();
   if (!fdb || !videoUri || !videoUri.startsWith('tvvideo://')) return videoUri;
-  const targetKey = videoUri.replace('tvvideo://', '').split('?')[0];
+  const urlObj = new URL(videoUri.replace('tvvideo://', 'http://dummy/'));
+  const targetKey = urlObj.pathname.replace('/', '') || 'screen_1';
+  const activeRoom = urlObj.searchParams.get('room') || defaultRoom || getAdminRoomId();
 
-  const mainDoc = await fdb.collection('tv_videos').doc(targetKey).get();
+  const mainDoc = await fdb.collection('rooms').doc(activeRoom).collection('videos').doc(targetKey).get();
   if (!mainDoc.exists) return null;
   const meta = mainDoc.data();
 
   const chunkPromises = [];
   for (let i = 0; i < meta.totalChunks; i++) {
-    chunkPromises.push(fdb.collection('tv_videos').doc(targetKey).collection('chunks').doc(`part_${i}`).get());
+    chunkPromises.push(fdb.collection('rooms').doc(activeRoom).collection('videos').doc(targetKey).collection('chunks').doc(`part_${i}`).get());
   }
 
   const chunkDocs = await Promise.all(chunkPromises);
@@ -174,20 +189,21 @@ async function loadVideoFromFirestore(videoUri) {
   return URL.createObjectURL(blob);
 }
 
-async function deleteVideoFromFirestore(targetKey) {
+async function deleteVideoFromFirestore(targetKey, roomId) {
   const fdb = getDb();
   if (!fdb || !targetKey) return;
+  const activeRoom = roomId || getAdminRoomId();
   const key = targetKey.toString().startsWith('screen_') ? targetKey : `screen_${targetKey}`;
   try {
-    const mainDoc = await fdb.collection('tv_videos').doc(key).get();
+    const mainDoc = await fdb.collection('rooms').doc(activeRoom).collection('videos').doc(key).get();
     if (mainDoc.exists) {
       const meta = mainDoc.data();
       const delPromises = [];
       for (let i = 0; i < (meta.totalChunks || 0); i++) {
-        delPromises.push(fdb.collection('tv_videos').doc(key).collection('chunks').doc(`part_${i}`).delete());
+        delPromises.push(fdb.collection('rooms').doc(activeRoom).collection('videos').doc(key).collection('chunks').doc(`part_${i}`).delete());
       }
       await Promise.all(delPromises);
-      await fdb.collection('tv_videos').doc(key).delete();
+      await fdb.collection('rooms').doc(activeRoom).collection('videos').doc(key).delete();
     }
   } catch (e) {}
 }
@@ -202,16 +218,18 @@ async function uploadMediaFile(file, targetKey = 'screen_1', onProgress = () => 
   return { url: videoUri, type: 'video' };
 }
 
-function reportFirebaseSpecs(screenId, specs) {
-  const fdb = getDb(); if (!fdb || !screenId) return;
-  fdb.collection('tv_streamer').doc('displays').set({
-    [screenId]: { screenId: parseInt(screenId, 10), specs, online: true, lastSeen: Date.now() }
+function reportFirebaseSpecs(screenId, specs, roomId) {
+  const fdb = getDb(); if (!fdb || !screenId || !roomId) return;
+  fdb.collection('rooms').doc(roomId).collection('displays').doc(screenId.toString()).set({
+    screenId: parseInt(screenId, 10), specs, online: true, lastSeen: Date.now()
   }, { merge: true }).catch(() => {});
 }
 
-function listenFirebaseDisplays(callback) {
-  const fdb = getDb(); if (!fdb) return;
-  fdb.collection('tv_streamer').doc('displays').onSnapshot((doc) => {
-    if (doc.exists) callback(Object.values(doc.data() || {}));
+function listenFirebaseDisplays(roomId, callback) {
+  const fdb = getDb(); if (!fdb || !roomId) return;
+  fdb.collection('rooms').doc(roomId).collection('displays').onSnapshot((snap) => {
+    const list = [];
+    snap.forEach((doc) => list.push(doc.data()));
+    callback(list);
   }, () => {});
 }
