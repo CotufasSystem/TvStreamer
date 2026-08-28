@@ -19,12 +19,12 @@
         <span class="icon">📡</span>
         <div>
           <h1>TV Multi-Screen Controller</h1>
-          <span class="badge">Nube Firebase • 7 Pantallas</span>
+          <span class="badge" id="header-room-badge">🔒 Sala Privada</span>
         </div>
       </div>
       <div class="header-actions">
         <button class="btn btn-primary" onclick="openPairModal()" style="font-size: 14px; padding: 9px 16px;">➕ Agregar TV</button>
-        <button id="btn-install-app" class="btn btn-outline" style="display: none;" onclick="triggerPWAInstall()">📲 Instalar App</button>
+        <button id="btn-reset-room" class="btn btn-outline" onclick="resetMyRoom()" title="Cambiar a nueva sala privada">🔑 Nueva Sala</button>
         <button id="btn-reload-all" class="btn btn-outline" onclick="window.location.reload(true)">🔄 Recargar</button>
         <button id="btn-clear-all" class="btn btn-danger" onclick="clearAllScreens()">🗑 Limpiar Todo</button>
       </div>

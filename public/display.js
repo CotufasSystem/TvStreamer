@@ -13,10 +13,18 @@ function getDisplaySpecs() {
 
 function initDisplay() {
   const urlParams = new URLSearchParams(window.location.search);
-  const paramId = urlParams.get('id') || localStorage.getItem('tv_screen_id');
-  const paramRoom = urlParams.get('room') || localStorage.getItem('tv_screen_room');
-  if (paramId && paramRoom) onTvPaired(paramId, paramRoom);
-  else showPairingScreen();
+  const paramId = urlParams.get('id');
+  const paramRoom = urlParams.get('room');
+  const savedId = localStorage.getItem('tv_screen_id');
+  const savedRoom = localStorage.getItem('tv_screen_room');
+
+  if (paramId && paramRoom) {
+    onTvPaired(paramId, paramRoom);
+  } else if (savedId && savedRoom) {
+    onTvPaired(savedId, savedRoom);
+  } else {
+    unpairThisTv();
+  }
 }
 
 function showPairingScreen() {

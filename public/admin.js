@@ -19,11 +19,20 @@ function renderUI() {
   renderDisplaysStatus();
 }
 function switchMode(mode) { currentState.mode = mode; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
+function resetMyRoom() {
+  if (confirm('¿Crear una nueva sala privada limpia? (Las TVs actuales deberán vincularse con su nuevo PIN)')) {
+    localStorage.removeItem('tv_admin_room_id');
+    window.location.reload();
+  }
+}
 function renderDisplaysStatus() {
   const container = document.getElementById('displays-status-container'); if (!container) return;
   const displayMap = new Map(); currentDisplays.forEach(d => { if (d && d.screenId) displayMap.set(d.screenId, d); });
   container.innerHTML = '';
   const myRoom = (typeof getAdminRoomId === 'function') ? getAdminRoomId() : '';
+  const roomBadge = document.getElementById('header-room-badge');
+  if (roomBadge && myRoom) roomBadge.textContent = `🔒 Sala: ${myRoom.replace('room_', '#')}`;
+
   for (let id = 1; id <= 7; id++) {
     const disp = displayMap.get(id), isOnline = disp ? (disp.online !== undefined ? disp.online : true) : false, specs = disp && disp.specs ? disp.specs : null;
     const chip = document.createElement('a'); chip.className = 'status-chip'; chip.href = `/display.html?id=${id}&room=${myRoom}`; chip.target = '_blank';
@@ -40,14 +49,12 @@ function handleUnpairTv(screenId, e) {
     renderDisplaysStatus();
   }
 }
-
 function getMediaPreviewHtml(src, type) {
   if (!src) return '<span class="no-img-text">Sin contenido</span>';
   if (src.startsWith('tvvideo://') || src.startsWith('chunked://')) return '<div style="color:#38bdf8; font-weight:bold; padding:10px;">🎬 Video Cargado</div>';
   if (type === 'video' || src.startsWith('data:video')) return `<video src="${src}" muted autoplay loop></video>`;
   return `<img src="${src}">`;
 }
-
 function renderMirrorView() {
   const conf = currentState.mirrorConfig || {}, box = document.getElementById('mirror-preview-box'), content = document.getElementById('mirror-preview-content');
   if (!box || !content) return;
@@ -59,7 +66,6 @@ function renderMirrorView() {
     else content.innerHTML = getMediaPreviewHtml(conf.src, conf.type);
   } else box.style.display = 'none';
 }
-
 function renderSplitView() {
   const conf = currentState.splitConfig || { cols: 7, layout: [[1,2,3,4,5,6,7]] };
   const fitSelect = document.getElementById('split-fit'); if (fitSelect) fitSelect.value = conf.fit || 'cover';
@@ -79,7 +85,6 @@ function renderSplitView() {
     else content.innerHTML = getMediaPreviewHtml(conf.src, conf.type);
   } else box.style.display = 'none';
 }
-
 function renderIndividualView() {
   const container = document.getElementById('individual-screens-container'); if (!container) return;
   container.innerHTML = '';
@@ -112,14 +117,12 @@ function renderIndividualView() {
     container.appendChild(card);
   }
 }
-
 async function uploadMedia(file, targetKey = 'screen_1', onProgress = () => {}) {
   if (typeof uploadMediaFile === 'function') return await uploadMediaFile(file, targetKey, onProgress);
   const isVideo = (file.type && file.type.startsWith('video/')) || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name || '');
   const r = new FileReader();
   return new Promise((res) => { r.onload = () => res({ url: r.result, type: isVideo ? 'video' : 'image' }); r.readAsDataURL(file); });
 }
-
 function renderThumbnailGrid(containerId, countId, playlist, removeFnName) {
   const container = document.getElementById(containerId), countEl = document.getElementById(countId);
   if (countEl) countEl.textContent = playlist.length;
@@ -134,7 +137,6 @@ function renderThumbnailGrid(containerId, countId, playlist, removeFnName) {
     container.appendChild(card);
   });
 }
-
 function openSlideshowModal(screenId) {
   targetSlideshowScreenId = screenId;
   const tEl = document.getElementById('modal-tv-id'); if (tEl) tEl.textContent = screenId;
@@ -156,8 +158,7 @@ function removeIndividualPlaylistItem(idx) {
 }
 function submitIndividualSlideshow() {
   if (tempIndividualPlaylist.length === 0) return alert('Agrega fotos o videos');
-  const inEl = document.getElementById('modal-slideshow-interval');
-  const interval = parseInt(inEl ? inEl.value : '5', 10) || 5;
+  const inEl = document.getElementById('modal-slideshow-interval'), interval = parseInt(inEl ? inEl.value : '5', 10) || 5;
   currentState.screens[targetSlideshowScreenId] = { type: 'slideshow', items: tempIndividualPlaylist, interval, fit: 'contain' };
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
   closeSlideshowModal();
@@ -173,12 +174,10 @@ function removeMirrorPlaylistItem(idx) {
 }
 function sendMirrorSlideshow() {
   if (tempMirrorPlaylist.length === 0) return alert('Agrega fotos o videos');
-  const inEl = document.getElementById('mirror-interval-input');
-  const interval = parseInt(inEl ? inEl.value : '5', 10) || 5;
+  const inEl = document.getElementById('mirror-interval-input'), interval = parseInt(inEl ? inEl.value : '5', 10) || 5;
   currentState.mirrorConfig = { type: 'slideshow', items: tempMirrorPlaylist, interval, fit: 'contain' };
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
-
 function setMirrorTab(type) {
   document.querySelectorAll('#view-mirror .subtab-btn').forEach(b => b.classList.remove('active'));
   if (event && event.target) event.target.classList.add('active');
@@ -190,8 +189,7 @@ function setMirrorTab(type) {
 }
 async function handleMirrorFileUpload(input) {
   if (input.files.length > 0) {
-    const btn = document.getElementById('btn-mirror-file');
-    if (btn) btn.textContent = '⏳ Subiendo...';
+    const btn = document.getElementById('btn-mirror-file'); if (btn) btn.textContent = '⏳ Subiendo...';
     try {
       const { url, type } = await uploadMedia(input.files[0], 'mirror', (p) => { if (btn) btn.textContent = `⏳ ${p}%...`; });
       currentState.mirrorConfig = { type, src: url, fit: 'contain' };
@@ -201,11 +199,11 @@ async function handleMirrorFileUpload(input) {
   }
 }
 function sendMirrorUrl() {
-  const inEl = document.getElementById('mirror-url-input'); const s = inEl ? inEl.value.trim() : '';
+  const inEl = document.getElementById('mirror-url-input'), s = inEl ? inEl.value.trim() : '';
   if (s) { currentState.mirrorConfig = { type: 'url', src: s, fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
 function sendMirrorText() {
-  const inEl = document.getElementById('mirror-text-input'); const t = inEl ? inEl.value.trim() : '';
+  const inEl = document.getElementById('mirror-text-input'), t = inEl ? inEl.value.trim() : '';
   if (t) { currentState.mirrorConfig = { type: 'text', text: t, fit: 'contain' }; renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState); }
 }
 function clearMirrorMedia() {
@@ -226,7 +224,7 @@ function clearSplitMedia() {
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
 function applySplitPreset() {
-  const pEl = document.getElementById('split-layout-preset'); const p = pEl ? pEl.value : '1x7';
+  const pEl = document.getElementById('split-layout-preset'), p = pEl ? pEl.value : '1x7';
   let rows = 1, cols = 7, layout = [[1, 2, 3, 4, 5, 6, 7]];
   if (p === '7x1') { rows = 7; cols = 1; layout = [[1], [2], [3], [4], [5], [6], [7]]; }
   else if (p === '2x4') { rows = 2; cols = 4; layout = [[1, 2, 3, 4], [5, 6, 7, null]]; }
@@ -238,7 +236,6 @@ function updateSplitConfig() {
   currentState.splitConfig.fit = fitEl ? fitEl.value : 'cover';
   renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
-
 async function uploadScreenMedia(screenId, input) {
   if (input.files.length > 0) {
     const btn = document.getElementById(`btn-file-${screenId}`);
@@ -250,10 +247,7 @@ async function uploadScreenMedia(screenId, input) {
       currentState.screens[screenId] = { type, src: url, fit: 'contain' };
       renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
     } catch (err) { alert('Error al subir: ' + err.message); }
-    finally {
-      if (btn) { btn.textContent = '🎬 Archivo'; btn.disabled = false; }
-      input.value = '';
-    }
+    finally { if (btn) { btn.textContent = '🎬 Archivo'; btn.disabled = false; } input.value = ''; }
   }
 }
 function promptScreenUrl(screenId) {
@@ -276,7 +270,6 @@ function clearAllScreens() {
   if (typeof deleteVideoFromFirestore === 'function') { deleteVideoFromFirestore('mirror'); deleteVideoFromFirestore('split'); }
   currentState = JSON.parse(JSON.stringify(defaultState)); renderUI(); if (typeof updateFirebaseState === 'function') updateFirebaseState(currentState);
 }
-
 function openPairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'flex'; }
 function closePairModal() { const m = document.getElementById('pair-modal'); if (m) m.style.display = 'none'; }
 async function submitPairPin() {
@@ -287,13 +280,12 @@ async function submitPairPin() {
   try {
     if (typeof pairTvWithPin === 'function') {
       await pairTvWithPin(cleanPin, targetScreenId, `TV ${targetScreenId}`);
-      alert(`🎉 ¡TV ${targetScreenId} vinculada a tu cuenta!`);
+      alert(`🎉 ¡TV ${targetScreenId} vinculada a tu sala!`);
       closePairModal(); if (pinInput) pinInput.value = '';
     }
   } catch (err) { alert('Error: ' + (err.message || 'Fallo')); }
   finally { if (btn) { btn.textContent = 'Vincular Ahora'; btn.disabled = false; } }
 }
-
 const myActiveRoom = (typeof getAdminRoomId === 'function') ? getAdminRoomId() : null;
 if (typeof listenFirebaseDisplays === 'function' && myActiveRoom) listenFirebaseDisplays(myActiveRoom, (d) => { if (d) { currentDisplays = d; renderDisplaysStatus(); } });
 if (typeof listenFirebaseState === 'function' && myActiveRoom) listenFirebaseState(myActiveRoom, (s) => { if (s) { currentState = Object.assign(currentState, s); renderUI(); } });
