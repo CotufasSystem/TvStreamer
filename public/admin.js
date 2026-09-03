@@ -37,10 +37,21 @@ function renderDisplaysStatus() {
     const disp = displayMap.get(id), isOnline = Boolean(disp && disp.online === true && disp.roomId === myRoom), specs = disp && disp.specs ? disp.specs : null;
     const chip = document.createElement('div');
     chip.className = `status-chip ${isOnline ? 'connected' : 'unpaired'}`;
-    chip.style.cursor = isOnline ? 'default' : 'pointer';
-    chip.onclick = () => { if (!isOnline) openPairModal(id); };
-    let specHtml = isOnline ? (specs ? `${specs.resLabel} (${specs.aspect})` : 'Conectada 🟢') : 'Sin vincular ⚪ (Toca para vincular)';
-    chip.innerHTML = `<div class="status-chip-header"><span>📺 TV ${id}</span><div style="display:flex; align-items:center; gap:6px;"><span class="chip-status-dot ${isOnline ? 'online' : ''}"></span>${isOnline ? `<button class="thumb-remove-btn" style="position:static; width:16px; height:16px;" onclick="handleUnpairTv(${id}, event)">✕</button>` : ''}</div></div><span class="spec-tag">${specHtml}</span>`;
+    let specHtml = isOnline ? (specs ? `${specs.resLabel} (${specs.aspect})` : 'Conectada 🟢') : 'Sin vincular ⚪';
+    const displayUrl = `display.html?id=${id}&room=${encodeURIComponent(myRoom)}`;
+    chip.innerHTML = `
+      <div class="status-chip-header">
+        <span>📺 TV ${id}</span>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="chip-status-dot ${isOnline ? 'online' : ''}"></span>
+          ${isOnline ? `<button class="thumb-remove-btn" style="position:static; width:16px; height:16px;" onclick="handleUnpairTv(${id}, event)" title="Desvincular">✕</button>` : ''}
+        </div>
+      </div>
+      <span class="spec-tag">${specHtml}</span>
+      <div style="display:flex; gap:4px; margin-top:4px;">
+        <a href="${displayUrl}" target="_blank" class="btn-open-screen" onclick="event.stopPropagation();" title="Abrir esta pantalla en nueva pestaña">👁️ Abrir TV ${id}</a>
+        ${!isOnline ? `<button class="btn-pair-pin" onclick="openPairModal(${id})" title="Vincular con PIN">🔑 PIN</button>` : ''}
+      </div>`;
     container.appendChild(chip);
   }
 }
@@ -90,6 +101,7 @@ function renderSplitView() {
 }
 function renderIndividualView() {
   const container = document.getElementById('individual-screens-container'); if (!container) return;
+  const myRoom = (typeof getAdminRoomId === 'function') ? getAdminRoomId() : '';
   container.innerHTML = '';
   for (let id = 1; id <= 7; id++) {
     const data = (currentState.screens && currentState.screens[id]) ? currentState.screens[id] : { type: 'empty', fit: 'contain' };
@@ -101,7 +113,11 @@ function renderIndividualView() {
     else if (data.type && data.type !== 'empty') previewHtml = getMediaPreviewHtml(data.src, data.type);
 
     card.innerHTML = `
-      <div class="screen-card-header"><span class="screen-title">Pantalla ${id}</span>
+      <div class="screen-card-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="screen-title">Pantalla ${id}</span>
+          <a href="display.html?id=${id}&room=${encodeURIComponent(myRoom)}" target="_blank" class="btn-open-screen" style="padding:2px 8px; font-size:11px;" title="Abrir TV ${id} en nueva pestaña">👁️ Ver</a>
+        </div>
         <select onchange="changeScreenFit(${id}, this.value)">
           <option value="contain" ${data.fit === 'contain' ? 'selected' : ''}>Contain</option>
           <option value="cover" ${data.fit === 'cover' ? 'selected' : ''}>Cover</option>

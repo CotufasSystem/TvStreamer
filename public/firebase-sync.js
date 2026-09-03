@@ -155,7 +155,9 @@ async function uploadVideoToFirestore(file, targetKey = 'screen_1', onProgress =
   const fdb = getDb();
   if (!fdb) throw new Error('Firestore no conectado');
   const activeRoom = getAdminRoomId();
-  const CHUNK_SIZE = 800 * 1024;
+  // Firestore tiene límite de 1,048,487 bytes por documento / propiedad.
+  // 500 KB binario genera ~667 KB en Base64, asegurando estar muy por debajo del límite.
+  const CHUNK_SIZE = 500 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const videoId = `vid_${Date.now()}`;
 
@@ -198,14 +200,20 @@ async function loadVideoFromFirestore(videoUri, defaultRoom) {
   }
 
   const chunkDocs = await Promise.all(chunkPromises);
-  const arrayBuffers = await Promise.all(chunkDocs.map(async (doc) => {
-    if (!doc.exists) throw new Error('Fragmento no encontrado');
+  const arrayBuffers = [];
+  for (let i = 0; i < chunkDocs.length; i++) {
+    const doc = chunkDocs[i];
+    if (!doc.exists) throw new Error(`Fragmento ${i} no encontrado`);
     const b64 = doc.data().data;
-    const res = await fetch(`data:${meta.mimeType};base64,${b64}`);
-    return await res.arrayBuffer();
-  }));
+    const binaryStr = atob(b64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let j = 0; j < binaryStr.length; j++) {
+      bytes[j] = binaryStr.charCodeAt(j);
+    }
+    arrayBuffers.push(bytes.buffer);
+  }
 
-  const blob = new Blob(arrayBuffers, { type: meta.mimeType });
+  const blob = new Blob(arrayBuffers, { type: meta.mimeType || 'video/mp4' });
   return URL.createObjectURL(blob);
 }
 
@@ -239,10 +247,10 @@ async function uploadMediaFile(file, targetKey = 'screen_1', onProgress = () => 
 }
 
 function reportFirebaseSpecs(screenId, specs, roomId) {
-  const fdb = getDb(); if (!fdb || !screenId || !roomId) return;
-  fdb.collection('rooms').doc(roomId).collection('displays').doc(screenId.toString()).set({
+  const fdb = getDb(); if (!fdb || !screenId || !roomId) return Promise.resolve();
+  return fdb.collection('rooms').doc(roomId).collection('displays').doc(screenId.toString()).set({
     screenId: parseInt(screenId, 10), specs, roomId, online: true, lastSeen: Date.now()
-  }, { merge: true }).catch(() => {});
+  }, { merge: true }).catch((err) => { console.warn('Error reportSpecs:', err); });
 }
 
 function listenFirebaseDisplays(roomId, callback) {

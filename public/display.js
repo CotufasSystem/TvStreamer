@@ -38,7 +38,7 @@ function showPairingScreen() {
   }
 }
 
-function onTvPaired(assignedId, roomId) {
+async function onTvPaired(assignedId, roomId) {
   screenId = parseInt(assignedId, 10);
   currentRoomId = roomId;
 
@@ -50,7 +50,7 @@ function onTvPaired(assignedId, roomId) {
   if (setupOverlay) setupOverlay.style.display = 'none';
   if (emptyEl) emptyEl.style.display = 'flex';
 
-  registerDisplay();
+  await registerDisplay();
   if (typeof listenDisplayActive === 'function') {
     if (unpairListenerUnsub) { unpairListenerUnsub(); unpairListenerUnsub = null; }
     unpairListenerUnsub = listenDisplayActive(screenId, currentRoomId, () => unpairThisTv());
@@ -77,10 +77,10 @@ function cleanActiveLocalBlob() {
   if (activeBlobUrl) { try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {} activeBlobUrl = null; }
 }
 
-function registerDisplay() {
+async function registerDisplay() {
   const specs = getDisplaySpecs();
   if (typeof reportFirebaseSpecs === 'function' && screenId && currentRoomId) {
-    reportFirebaseSpecs(screenId, specs, currentRoomId);
+    await reportFirebaseSpecs(screenId, specs, currentRoomId);
   }
 }
 
@@ -122,14 +122,21 @@ async function playVideoWithAudio(src, isLoop = true) {
   videoEl.style.display = 'block';
   videoEl.className = `media-elem ${currentFitClass}`;
   videoEl.loop = isLoop;
-  videoEl.volume = 1.0;
-  videoEl.muted = false;
+  videoEl.muted = true; // Fundamental para que todos los navegadores permitan autoplay sin bloqueo
+  videoEl.playsInline = true;
+  videoEl.setAttribute('playsinline', '');
+  videoEl.setAttribute('webkit-playsinline', '');
   videoEl.src = finalSrc;
   videoEl.load();
 
-  const p = videoEl.play();
-  if (p !== undefined) {
-    p.catch(() => { videoEl.muted = true; videoEl.play().then(() => { setTimeout(() => { videoEl.muted = false; }, 300); }).catch(() => {}); });
+  try {
+    await videoEl.play();
+    // Intenta desmutear si el navegador lo permite
+    videoEl.muted = false;
+  } catch (err) {
+    console.warn('[TV-DISPLAY] Autoplay con audio bloqueado, reproduciendo en silencio:', err);
+    videoEl.muted = true;
+    try { await videoEl.play(); } catch (e) { console.error('[TV-DISPLAY] Error reproduciendo video:', e); }
   }
 }
 

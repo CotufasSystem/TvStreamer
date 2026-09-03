@@ -4,7 +4,8 @@
   "description": "Sistema de transmision para 7 pantallas de TV",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch-path=server.js --watch-path=public server.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",

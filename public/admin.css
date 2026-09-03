@@ -35,6 +35,10 @@ body { background-color: var(--bg-dark); color: var(--text-main); font-family: -
 .spec-tag { font-size: 11px; color: #38bdf8; font-family: monospace; }
 .chip-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
 .chip-status-dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.btn-open-screen { display: inline-flex; align-items: center; justify-content: center; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; text-decoration: none; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-open-screen:hover { background: var(--primary); color: #fff; }
+.btn-pair-pin { background: rgba(251, 191, 36, 0.15); border: 1px solid rgba(251, 191, 36, 0.4); color: #fbbf24; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-pair-pin:hover { background: #d97706; color: #fff; }
 
 /* Mode Tabs */
 .mode-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; background: var(--bg-card); padding: 6px; border-radius: 10px; border: 1px solid var(--border); }
